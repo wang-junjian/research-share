@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>后台管理 · 研究成果</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%233B5BFD'/%3E%3Ctext x='32' y='43' font-family='Helvetica,Arial' font-size='30' font-weight='bold' fill='white' text-anchor='middle'%3E研%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="page-admin">
+
+<!-- ============ 未登录：登录门 ============ -->
+<div id="authGate" class="auth-screen" hidden></div>
+
+<!-- ============ 已登录：管理台 ============ -->
+<div id="appRoot" hidden>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <!-- 站名就是「去公开页」的入口，与公开页顶栏的写法一致（logo + 站名一起包在 <a> 里） -->
+        <a href="/" title="查看公开页面">
+          <span class="logo-mark">研</span>
+          <span class="brand-name">研究成果</span>
+        </a>
+        <span class="brand-tag">后台管理</span>
+      </div>
+      <div class="an-tabs" role="tablist" id="tabs">
+        <button class="an-tab is-on" type="button" role="tab" data-tab="manage" aria-selected="true">成果管理</button>
+        <button class="an-tab" type="button" role="tab" data-tab="dash" aria-selected="false" hidden>数据看板</button>
+      </div>
+      <div class="topbar-spacer"></div>
+      <span class="user-chip">
+        <span class="avatar" id="userAvatar">–</span>
+        <span class="name" id="userName">…</span>
+      </span>
+      <span class="brand-tag" id="roleTag" style="border:0;padding-left:0;margin-left:0">—</span>
+      <button class="btn btn-sm" id="userChip" type="button" title="账号与退出">账号</button>
+    </div>
+  </header>
+
+  <main class="page" id="adminPage">
+
+    <!-- ==================== 页签 1：成果管理 ==================== -->
+    <div id="tabManage">
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">成果管理</div>
+          <div class="page-sub" id="pageSub">加载中…</div>
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">全部成果</div><div class="v" id="sAll">–</div></div>
+        <div class="stat"><div class="k">今年</div><div class="v" id="sYear">–</div></div>
+        <div class="stat"><div class="k">录入者</div><div class="v" id="sOwner">–</div></div>
+        <div class="stat"><div class="k">管理员</div><div class="v" id="sAdmin">–</div></div>
+      </div>
+
+      <!-- ---------- 录入 ---------- -->
+      <section class="composer card-panel">
+        <div class="composer-head">
+          <span class="composer-title">录入新成果</span>
+          <span class="auth-hint">日期默认当天 · 录入后公开页面立即可见</span>
+        </div>
+        <form id="itemForm" novalidate>
+          <div class="field" style="margin-bottom:10px">
+            <input id="fTitle" type="text" maxlength="120" placeholder="标题：一句话说清这项研究" autocomplete="off">
+          </div>
+          <textarea id="fSummary" maxlength="400" placeholder="概览（约 200 字）：研究内容、方法、结论。微信分享卡片会取前 80 字。"></textarea>
+          <div class="composer-extra">
+            <input id="fUrl" type="url" placeholder="原文链接 https://" autocomplete="off">
+            <input id="fDate" type="date">
+          </div>
+          <div class="composer-actions">
+            <span class="composer-tip">详情页即时生效</span>
+            <button class="btn" id="btnCancelEdit" type="button">清空</button>
+            <button class="btn btn-primary" id="btnSave" type="submit">录入成果</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ---------- 检索 / 筛选 / 导出 ---------- -->
+      <div class="toolbar">
+        <div class="search-wrap" id="searchWrap" style="max-width:320px">
+          <span class="ico" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+            </svg>
+          </span>
+          <input id="adminSearch" type="search" placeholder="搜索标题 / 概览 / 链接…" autocomplete="off">
+          <button class="clear" id="adminSearchClear" type="button" title="清空">✕</button>
+        </div>
+        <div class="chips" id="adminFilter"></div>
+        <div class="toolbar-spacer"></div>
+        <button class="btn btn-sm" id="exportJson" type="button">导出 JSON</button>
+        <button class="btn btn-sm" id="exportCsv" type="button">导出 CSV</button>
+      </div>
+
+      <div class="bulkbar" id="bulkbar" hidden>
+        <span class="n" id="bulkCount">已选 0 条</span>
+        <button class="btn btn-sm btn-danger" id="bulkDelete" type="button">批量删除</button>
+        <button class="btn btn-sm" id="bulkClear" type="button">取消选择</button>
+      </div>
+
+      <!-- ---------- 表格 ---------- -->
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th style="width:36px"><input class="cbx" id="checkAll" type="checkbox" title="全选本页可管理的成果"></th>
+              <th style="width:104px">日期</th>
+              <th>标题</th>
+              <th class="hide-sm">概览</th>
+              <th class="hide-sm" style="width:120px">录入者</th>
+              <th style="width:132px; text-align:right">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div id="tableEmpty"></div>
+      </div>
+
+      <div class="toolbar" style="margin-top:14px">
+        <span class="count-note" id="pageNote"></span>
+        <div class="toolbar-spacer"></div>
+        <button class="btn btn-sm" id="prevPage" type="button">上一页</button>
+        <button class="btn btn-sm" id="nextPage" type="button">下一页</button>
+      </div>
+
+      <!-- ---------- 管理员设置 ---------- -->
+      <section class="card-panel" id="adminCard" style="padding:18px 20px;margin-top:18px" hidden>
+        <div class="page-head" style="margin-bottom:10px">
+          <div class="page-title" style="font-size:15px">管理员设置</div>
+          <div class="page-sub">管理员可修改 / 删除所有人的成果</div>
+        </div>
+        <div class="admin-grid" id="adminList"></div>
+        <div class="promote-box">
+          <h3>提升录入者为管理员</h3>
+          <div class="admin-grid" id="ownerList"></div>
+          <div class="field-row" style="margin-top:10px">
+            <input id="manualUid" type="text" placeholder="或直接输入用户 ID" autocomplete="off">
+            <button class="btn" id="btnAddAdmin" type="button">添加</button>
+          </div>
+        </div>
+        <div class="uid-line">
+          我的用户 ID：<span id="myUid"></span>
+          <button class="link-btn" id="btnCopyUid" type="button">复制</button>
+        </div>
+      </section>
+
+      <p class="foot-note">研究成果 · 后台管理 · <a href="/">返回公开页面</a></p>
+    </div>
+
+    <!-- ==================== 页签 2：数据看板 ==================== -->
+    <div id="tabDash" hidden>
+
+      <div class="an-banner">
+        <span aria-hidden="true">◧</span>
+        <div><b>这套数字的自证与边界。</b>
+        数据来自自建的匿名埋点（一条公开的低信任通道，理论上可被伪造）。看板只统计匿名访客行为：
+        <b>不含 IP、不含 UA 原文、不含身份</b>，机器人流量与「自己人」标识都已剔除。所以——小样本下的百分比会打上灰标，
+        绝对数永远和比例并排显示；原始事件永久保留，发现异常可回溯重算。</div>
+      </div>
+
+      <div class="page-head">
+        <div>
+          <div class="page-title">数据看板</div>
+          <div class="page-sub" id="rangeSub">加载中…</div>
+        </div>
+        <div class="topbar-spacer"></div>
+        <div class="an-range" id="range">
+          <button type="button" data-d="1">今天</button>
+          <button type="button" data-d="7">近 7 天</button>
+          <button type="button" data-d="30" class="is-on">近 30 天</button>
+          <button type="button" data-d="90">近 90 天</button>
+        </div>
+        <span class="an-fresh" id="fresh"><i class="an-dot"></i>时区 Asia/Shanghai</span>
+      </div>
+
+      <div id="dashStatus"></div>
+      <div id="dashBody" hidden>
+
+      <!-- ============ A 核心指标 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">A</span>核心指标</span>
+          <span class="an-sec-note">悬停看口径定义 · 括号内为较上一周期的变化</span>
+          <span class="sp"></span>
+          <span class="an-sec-note" id="exclNote"></span>
+        </div>
+        <div class="an-kpis" id="kpis"></div>
+      </section>
+
+      <!-- ============ B 流量趋势 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">B</span>流量趋势</span>
+          <span class="an-sec-note">按日 · 淡红竖带标出「当天发布了新成果」，把内容动作和流量变化对上</span>
+        </div>
+        <div class="an-card">
+          <div class="an-legend">
+            <span><i class="sq" style="background:var(--brand)"></i>访客数<em style="font-style:normal;color:var(--muted)"> 左轴</em></span>
+            <span><i style="background:var(--text-2)"></i>页面浏览<em style="font-style:normal;color:var(--muted)"> 右轴</em></span>
+            <span><i class="sq" style="background:rgba(230,57,70,.16)"></i>当天有新条目发布</span>
+          </div>
+          <div id="trend"></div>
+          <p class="an-note" id="trendNote"></p>
+        </div>
+      </section>
+
+      <!-- ============ C 漏斗 + 分享效力 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">C</span>行为漏斗与分享效力</span>
+          <span class="an-sec-note">漏斗按会话去重 · 流失最大的一跳用朱红标出——那是唯一需要立刻动的地方</span>
+        </div>
+        <div class="an-grid2">
+          <div class="an-card">
+            <div id="funnel"></div>
+          </div>
+          <div class="an-card">
+            <div class="an-legend" style="justify-content:space-between">
+              <span>分享方式效力 · <span class="an-num" id="shareTotal">—</span> 次</span>
+              <span class="an-tag">微信内 clipboard 会降级</span>
+            </div>
+            <div id="share" style="margin-top:8px"></div>
+            <p class="an-note">「降级」= 浏览器剪贴板不可用、退化成弹层让用户手动长按保存。这一列直接回答「5 个按钮里哪几个是摆设」。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ D 内容表现 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">D</span>内容表现</span>
+          <span class="an-sec-note">两种诊断：<b>有曝光没人点</b>（标题问题）与<b>点开不跳转</b>（概览问题）</span>
+          <span class="sp"></span>
+          <span class="an-sec-note" id="itemSummary"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th style="width:78px">编号</th>
+                <th>标题</th>
+                <th style="width:110px; text-align:right">详情浏览</th>
+                <th style="width:96px; text-align:right">原文跳转</th>
+                <th style="width:90px; text-align:right">跳转率</th>
+                <th class="hide-sm" style="width:74px; text-align:right">分享</th>
+                <th style="width:100px; text-align:right">最近被看</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTable"></tbody>
+          </table>
+          <div id="itemsMore"></div>
+        </div>
+      </section>
+
+      <!-- ============ E 来源、设备与回访 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">E</span>来源、设备与回访</span>
+          <span class="an-sec-note">来源按会话首次命中归类 · 设备用来判断该往哪一端优化版式</span>
+        </div>
+        <div class="an-grid2b">
+          <div class="an-card">
+            <div class="an-legend">来源分类（会话数）</div>
+            <div class="an-rows" id="sources"></div>
+            <div class="an-legend" style="margin:16px 0 8px">设备</div>
+            <div id="devices"></div>
+          </div>
+          <div class="an-card">
+            <div class="an-legend">新访客 / 回访访客</div>
+            <div id="retention"></div>
+            <p class="an-note" id="retNote"></p>
+            <div class="an-legend" style="margin:14px 0 8px">回访率（按周）</div>
+            <div class="an-rows" id="retTrend"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ F 实时与埋点健康度 ============ -->
+      <section class="an-sec">
+        <div class="an-sec-head">
+          <span class="an-sec-title"><span class="idx">F</span>实时与埋点健康度</span>
+          <span class="an-sec-note">先证明数据可信，再谈结论</span>
+        </div>
+        <div class="an-grid2b">
+          <div class="an-card">
+            <div class="an-pulse">
+              <b id="liveNow">—</b><span>最近 30 分钟活跃访客</span>
+              <span class="sp" style="flex:1"></span>
+              <span class="an-tag is-ok">实时</span>
+            </div>
+            <div id="hourly"></div>
+            <div class="an-legend" style="margin:14px 0 6px">最近事件流（已脱敏：不含 IP / UA / 身份）</div>
+            <div class="an-stream" id="stream"></div>
+          </div>
+          <div class="an-card">
+            <div class="an-health" id="health"></div>
+            <p class="an-note" id="healthNote"></p>
+            <div class="an-legend" style="margin:14px 0 6px">埋点版本分布（口径变更可追溯）</div>
+            <div class="an-rows" id="versions"></div>
+          </div>
+        </div>
+      </section>
+
+      </div>
+      <p class="foot-note">研究成果 · 数据看板 · 仅管理员可见 · 原始事件永久保留</p>
+    </div>
+
+  </main>
+</div>
+
+<div id="modalMount"></div>
+
+<script>window.PUBLIC_CONFIG = __PUBLIC_CONFIG__</script>
+<script src="/assets/vendor/workbuddy-cloud-sdk.global.js"></script>
+<script src="/assets/cloud.js"></script>
+<script src="/assets/analytics.js"></script>
+<script src="/assets/admin.js"></script>
+</body>
+</html>

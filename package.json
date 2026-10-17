@@ -1,0 +1,33 @@
+{
+  "name": "research-share",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "研究成果卡片分享站：服务端渲染的列表与详情页、微信分享卡片、Agent 读写接口、自带埋点与数据看板",
+  "keywords": [
+    "wechat",
+    "open-graph",
+    "server-side-rendering",
+    "analytics",
+    "node"
+  ],
+  "license": "MIT",
+  "author": "Junjian Wang",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wang-junjian/research-share.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wang-junjian/research-share/issues"
+  },
+  "homepage": "https://github.com/wang-junjian/research-share#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "verify:og": "node scripts/verify-og.mjs"
+  },
+  "dependencies": {
+    "@tencent-ai/workbuddy-cloud-sdk": "dev"
+  }
+}
