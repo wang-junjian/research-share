@@ -25,6 +25,8 @@
   },
   "scripts": {
     "start": "node server.js",
+    "preflight": "bash scripts/preflight.sh",
+    "smoke": "bash scripts/smoke.sh",
     "verify:og": "node scripts/verify-og.mjs"
   },
   "dependencies": {

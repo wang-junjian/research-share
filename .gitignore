@@ -17,5 +17,11 @@ token.txt
 .DS_Store
 Thumbs.db
 
+.workbuddy/
+
+# 平台发布生成的本地标记（应用身份在机器上，不进仓库）
+.wbapp_*.genie
+.workbuddy/applications.yaml
+
 # 本地覆盖用的数据
 data/sample-items.local.json
