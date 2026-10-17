@@ -2,8 +2,8 @@
 # ===========================================================================
 # 研究成果 · Agent 接口冒烟测试（可反复跑，跑完不留数据）
 #
-#   bash agent-api/smoke.sh                              # 打线上
-#   BASE=http://127.0.0.1:3210 bash agent-api/smoke.sh   # 打本地
+#   bash scripts/smoke.sh                                # 打线上
+#   BASE=http://127.0.0.1:3210 bash scripts/smoke.sh     # 打本地
 #
 # 关于认证通道（线上实测）：
 #   平台的边缘代理会把 `Authorization` 请求头吃掉，线上用它会得到 401
