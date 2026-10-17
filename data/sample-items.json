@@ -1,0 +1,61 @@
+{
+  "_comment": "演示模式的示例数据。全部为虚构条目，仅用于让界面有内容可渲染；换成你自己的数据后请删除本文件或改名。",
+  "items": [
+    {
+      "id": 1,
+      "title": "微信内分享卡片的三个必备标签",
+      "summary": "微信抓取链接预览时只看 og:title、og:description、og:image 三个标签，而它不会执行页面里的 JavaScript。这就是为什么单页应用在微信里分享出去只有一条光秃秃的链接：抓取发生时，页面还是空壳。解法是把这三个标签放到服务端渲染的 HTML 里，并且 og:image 必须是绝对 URL。",
+      "url": "https://example.com/posts/wechat-og-tags.html",
+      "date": "2026-09-28"
+    },
+    {
+      "id": 2,
+      "title": "为什么 og:image 必须是绝对地址",
+      "summary": "微信的抓取器不解析相对路径，也不会自己补域名。写 /og/1.png 会得到一个空白缩略图，而写完整 URL 就正常。这条和 canonical、og:url 是同一类问题：凡是会被第三方服务读取的地址，都必须是绝对 URL，且要通过一个显式的 SITE_URL 环境变量给出，不能依赖请求的 Host 头 —— 反向代理后面 Host 往往是内网地址。",
+      "url": "https://example.com/posts/absolute-og-url.html",
+      "date": "2026-09-26"
+    },
+    {
+      "id": 3,
+      "title": "用 Node 内置模块画一张分享封面图",
+      "summary": "不引入 canvas 之类的原生依赖，直接用最小实现把标题排版成 PNG：算好文本宽度、按字形写像素、手工拼 PNG 分块。好处是零原生依赖、部署时不用担心编译环境；代价是只能画很简单的版式，复杂排版还是得靠真正的渲染引擎。",
+      "url": "https://example.com/posts/png-without-canvas.html",
+      "date": "2026-09-24"
+    },
+    {
+      "id": 4,
+      "title": "服务端渲染与客户端埋点为什么要各记一次 page_view",
+      "summary": "服务端那条代表「页面确实被送到了浏览器」，客户端那条代表「脚本确实跑起来了」。两者之比就是埋点覆盖率。如果只有客户端一条，脚本因为报错没加载时你什么都看不到，数据会静默变少；两条都记，才能发现这种无声的失效。",
+      "url": "https://example.com/posts/dual-pageview.html",
+      "date": "2026-09-21"
+    },
+    {
+      "id": 5,
+      "title": "漏斗统计必须嵌套，否则会算出负流失",
+      "summary": "把每一步按「到达该步的会话数」独立统计，看起来天经地义，但只要有人从分享链接直接落在详情页、跳过了首页，第三步的人数就可能超过第二步，流失率变成负数。正确做法是用标志位把每一步定义成「上一级的子集」，使各级单调不增。",
+      "url": "https://example.com/posts/nested-funnel.html",
+      "date": "2026-09-18"
+    },
+    {
+      "id": 6,
+      "title": "sendBeacon 与 fetch keepalive 的分工",
+      "summary": "用户点外链跳走的那一刻，页面正在卸载，普通的 fetch 会被浏览器取消。sendBeacon 专为这个场景设计：请求交给浏览器，页面死了也会发出去。但它只能发 POST、无法自定义请求头、也不返回响应。所以策略是 sendBeacon 优先，体积或环境不满足时降级到 fetch(keepalive)。",
+      "url": "https://example.com/posts/beacon-vs-keepalive.html",
+      "date": "2026-09-15"
+    },
+    {
+      "id": 7,
+      "title": "line-clamp 裁不干净的原因",
+      "summary": "只设 -webkit-line-clamp 时，如果容器自身高度不是行高的整数倍，最后一行会被切掉一半，露出半截字。原因是 clamp 控制的是行数，而容器高度是另一个变量。两处都按行高计算，才能让裁剪边界落在行与行之间。",
+      "url": "https://example.com/posts/line-clamp-boundary.html",
+      "date": "2026-09-11"
+    },
+    {
+      "id": 8,
+      "title": "把写权限收进数据库函数的理由",
+      "summary": "公开的站点需要匿名可读，但绝不能匿名可写。若给 anon 开放表的 INSERT 权限，就等于把「谁能写」这件事交给客户端自律。更稳的结构是：表本身不给匿名任何权限，所有写入必须经过一个 SECURITY DEFINER 函数，token 校验、字段校验、频率控制全部发生在函数内部。",
+      "url": "https://example.com/posts/write-through-function.html",
+      "date": "2026-09-08"
+    }
+  ]
+}

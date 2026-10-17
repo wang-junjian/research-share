@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# 环境变量：真实配置永远不进仓库
+.env
+.env.*
+!.env.example
+
+# agent 写权限令牌（原文只存本机，库里只有 SHA-256）
+.agent-token
+agent-api/token.txt
+token.txt
+
+# 系统噪声
+.DS_Store
+Thumbs.db
+
+# 本地覆盖用的数据
+data/sample-items.local.json
