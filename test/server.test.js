@@ -46,6 +46,7 @@ async function withServer(rows, fn) {
     },
     handleApi,
     getAdminHtml: async () => '<html>admin</html>',
+    tryServeStatic: async () => false,
   })
   const server = http.createServer(handler)
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
