@@ -1,7 +1,13 @@
-// 验证 OG 封面图：PNG 结构 + 像素统计（自写解码器，零依赖）
+import test from 'node:test'
+import assert from 'node:assert/strict'
 import zlib from 'node:zlib'
-import fs from 'node:fs'
 import { drawCover, COVER_WIDTH, COVER_HEIGHT } from '../og-image.js'
+
+// ---------------------------------------------------------------------------
+// OG 封面（微信分享卡片）的绘制不变量。drawCover 是纯函数，直接 import。
+// 解码器与像素统计是测试 harness，留在本文件，不进 og-image.js 的 interface。
+// （断言内核移植自 scripts/verify-og.mjs，原脚本已随本测试落地而删除。）
+// ---------------------------------------------------------------------------
 
 function decodePNG(buf) {
   const sig = [137, 80, 78, 71, 13, 10, 26, 10]
@@ -14,12 +20,7 @@ function decodePNG(buf) {
     const type = buf.toString('latin1', off + 4, off + 8)
     const data = buf.subarray(off + 8, off + 8 + len)
     if (type === 'IHDR') {
-      ihdr = {
-        width: data.readUInt32BE(0),
-        height: data.readUInt32BE(4),
-        depth: data[8],
-        colorType: data[9],
-      }
+      ihdr = { width: data.readUInt32BE(0), height: data.readUInt32BE(4), depth: data[8], colorType: data[9] }
     } else if (type === 'IDAT') idat.push(data)
     else if (type === 'IEND') break
     off += 12 + len
@@ -57,7 +58,7 @@ function stats(img) {
       // 朱红 #C62B38
       if (Math.abs(r - 198) <= 6 && Math.abs(g - 43) <= 6 && Math.abs(b - 56) <= 6) red++
       // 内容包围盒：排除外框（inset 40）与右上角标
-      const inFrameBand = (x < 60 || x > width - 61 || y < 60 || y > height - 61)
+      const inFrameBand = x < 60 || x > width - 61 || y < 60 || y > height - 61
       const isTick = x > width - 170 && y < 140
       if (!isBg && !inFrameBand && !isTick) {
         if (x < minX) minX = x
@@ -71,39 +72,33 @@ function stats(img) {
 }
 
 const item = { id: 1, title: 'DSpark 深度研究：speculative decoding 系统拆解', date: '2026-10-15' }
-const png = drawCover(item)
-fs.writeFileSync('/tmp/og-cover.png', png)
 
-console.log('PNG 字节数:', png.length, '| 压缩率:', ((png.length / (COVER_WIDTH * COVER_HEIGHT * 4)) * 100).toFixed(2) + '%')
+test('封面绘制不变量：尺寸、色彩、版面安全区、体积', () => {
+  const png = drawCover(item)
+  const img = decodePNG(png)
+  const s = stats(img)
 
-const img = decodePNG(png)
-const s = stats(img)
-console.log('IHDR:', `${s.width}x${s.height}`, 'depth=' + img.depth, 'colorType=' + img.colorType)
-console.log('颜色种类:', s.distinctColors)
-console.log('非底色像素:', s.nonBgPixels, `(${((s.nonBgPixels / s.total) * 100).toFixed(3)}%)`)
-console.log('朱红像素:', s.redPixels)
+  assert.equal(s.width, COVER_WIDTH, '宽度')
+  assert.equal(s.height, COVER_HEIGHT, '高度')
+  assert.equal(img.depth, 8, 'RGBA 8bit depth')
+  assert.equal(img.colorType, 6, 'RGBA colorType')
+  assert.ok(s.distinctColors >= 4, `不是纯色图（实际 ${s.distinctColors} 种）`)
+  assert.ok(s.nonBgPixels > 5000, `有可见内容（实际 ${s.nonBgPixels} 像素）`)
+  assert.ok(s.redPixels > 500, `朱红色出现（实际 ${s.redPixels} 像素）`)
+  assert.ok(png.length < 200 * 1024, `体积合理（实际 ${(png.length / 1024).toFixed(1)}KB）`)
 
-// 断言
-const SAFE_LO = 285
-const SAFE_HI = 915
-const b = s.bbox
-console.log('内容包围盒:', `x ${b.minX}..${b.maxX}`, `y ${b.minY}..${b.maxY}`)
-const checks = [
-  ['尺寸 1200x630', s.width === COVER_WIDTH && s.height === COVER_HEIGHT],
-  ['RGBA 8bit', img.depth === 8 && img.colorType === 6],
-  ['不是纯色图', s.distinctColors >= 4],
-  ['有可见内容', s.nonBgPixels > 5000],
-  ['朱红色出现', s.redPixels > 500],
-  ['体积合理(<200KB)', png.length < 200 * 1024],
-  [`版面在居中方形安全区内 (${SAFE_LO}..${SAFE_HI})`, b.minX >= SAFE_LO && b.maxX <= SAFE_HI],
-]
-let pass = true
-for (const [name, ok] of checks) {
-  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}`)
-  if (!ok) pass = false
-}
+  // 版面在居中方形安全区内：微信会话里封面常被裁成方图
+  const SAFE_LO = 285
+  const SAFE_HI = 915
+  const b = s.bbox
+  assert.ok(b.minX >= SAFE_LO && b.maxX <= SAFE_HI, `内容包围盒 x ${b.minX}..${b.maxX} 应在 ${SAFE_LO}..${SAFE_HI}`)
+})
 
-// 决定性差异：不同成果应产出不同封面
-const other = drawCover({ id: 2, title: '电子宠物方向调研', date: '2026-10-12' })
-console.log(`  ${Buffer.compare(png, other) !== 0 ? 'PASS' : 'FAIL'}  不同成果封面不同`)
-console.log(pass ? '\n全部通过' : '\n存在失败项')
+test('确定性：同一成果恒得同一封面，不同成果封面不同', () => {
+  const a = drawCover(item)
+  const b = drawCover(item)
+  assert.deepEqual(a, b, '同输入应恒同输出（缓存与微信抓图依赖这一点）')
+
+  const other = drawCover({ id: 2, title: '电子宠物方向调研', date: '2026-10-12' })
+  assert.notEqual(Buffer.compare(a, other), 0, '不同成果应产出不同封面')
+})

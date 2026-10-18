@@ -178,4 +178,4 @@ function drawCover(item) {
   return encodePNG(W, H, cv.buf)
 }
 
-export { drawCover, encodePNG, createCanvas, W as COVER_WIDTH, H as COVER_HEIGHT }
+export { drawCover, W as COVER_WIDTH, H as COVER_HEIGHT }

@@ -168,7 +168,6 @@ group by e.session_id
 ├── docs/                  接口说明与埋点设计
 └── scripts/
     ├── preflight.sh       发布前自检（配置 / 语法 / 真实数据 / 非演示模式）
-    ├── verify-og.mjs      OG 封面图自检（自写 PNG 解码，零依赖）
     ├── smoke.sh           Agent 接口冒烟测试（跑完不留数据）
     └── probe-anon.mjs     以应用进程身份试探库的权限边界（只读 + 三条应失败的写）
 ```
