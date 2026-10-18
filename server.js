@@ -5,6 +5,8 @@ import { drawCover } from './og-image.js'
 import { createDemoCloud } from './lib/demo-cloud.js'
 import { loadEnv } from './lib/load-env.js'
 import { renderList, renderDetail, renderError } from './lib/render.js'
+// PROTOTYPE：界面风格原型（?variant=a|b），评审后连同 lib/render.prototype.js 一起移除
+import { renderListVariant, renderDetailVariant, injectPrototypeSwitcher } from './lib/render.prototype.js'
 import { createTrack } from './lib/track.js'
 import { createAgentApi } from './lib/agent-api.js'
 import { createItemsStore } from './lib/items-store.js'
@@ -16,7 +18,7 @@ import { sendJson, sendHtml, CORS_HEADERS } from './lib/http.js'
 // 测试（test/server.test.js）与真实入口共用这一个 handler —— 同一条 seam。
 // ---------------------------------------------------------------------------
 
-export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }) {
+export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic, uiPrototype = null }) {
   return async function handler(req, res) {
     const rawUrl = req.url || '/'
     let reqUrl
@@ -40,7 +42,15 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       }
       if (path === '/' || path === '/index.html') {
         const items = await itemsStore.list()
-        const html = renderList(site, items)
+        // PROTOTYPE：?variant=a|b 走原型风格；现行页注入底部切换条
+        const pv = uiPrototype ? reqUrl.searchParams.get('variant') : ''
+        let html
+        if (pv === 'a' || pv === 'b') {
+          html = renderListVariant(site, items, pv)
+        } else {
+          html = renderList(site, items)
+          if (uiPrototype) html = injectPrototypeSwitcher(html)
+        }
         // 先发埋点请求（RPC 立刻发出），再写响应 —— 两者重叠，不给用户加延迟
         trackServerPageView(req, { page: '/' })
         return sendHtml(res, 200, html)
@@ -77,7 +87,15 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         if (!it) {
           return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
         }
-        const html = renderDetail(site, it)
+        // PROTOTYPE：?variant=a|b 走原型风格；现行页注入底部切换条
+        const pv = uiPrototype ? reqUrl.searchParams.get('variant') : ''
+        let html
+        if (pv === 'a' || pv === 'b') {
+          html = renderDetailVariant(site, it, pv)
+        } else {
+          html = renderDetail(site, it)
+          if (uiPrototype) html = injectPrototypeSwitcher(html)
+        }
         trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}` })
         return sendHtml(res, 200, html)
       }
@@ -171,12 +189,18 @@ async function main() {
 
   const { handleApi } = createAgentApi({ cloud, site, itemsStore })
 
+  // PROTOTYPE：界面风格原型开关（RS_PROTOTYPE=0 关闭），评审后移除
+  const uiPrototype = process.env.RS_PROTOTYPE !== '0'
+
   const server = http.createServer(
-    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }),
+    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic, uiPrototype }),
   )
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[research-share] listening on 0.0.0.0:${PORT}, endpoint=${DEMO ? '(demo)' : ENDPOINT}`)
+    if (uiPrototype) {
+      console.log('[prototype] 界面原型已启用：/?variant=a（暗夜档案）、/?variant=b（杂志特稿），RS_PROTOTYPE=0 关闭')
+    }
     if (DEMO) {
       console.log('')
       console.log('[demo] 演示模式已启用：没有配置 CLOUD_ENDPOINT / CLOUD_PUBLISHABLE_KEY。')
