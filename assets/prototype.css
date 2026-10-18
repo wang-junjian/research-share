@@ -214,23 +214,22 @@ body[data-variant="b"] .btn-ghost:hover { background: var(--pb-accent-soft); bor
 body[data-variant="b"] .empty { background: transparent; border-color: var(--pb-line); color: var(--pb-muted); }
 body[data-variant="b"] .empty h3 { color: var(--pb-ink-2); }
 
-/* —— B 列表：报头刊头 —— */
-.pb-masthead { text-align: center; padding: 30px 0 24px; position: relative; margin-bottom: 4px; }
-.pb-masthead::after {
-  content: ''; display: block; margin-top: 22px;
+/* —— B 列表：日期行（报名已由顶栏承担，这里只留纤细的报刊日期行 + 双细线） —— */
+.pb-dateline {
+  display: block; text-align: center;
+  padding: 18px 0 0;
+  font-size: 11.5px; letter-spacing: .18em; color: var(--pb-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.pb-dateline > span { margin: 0 5px; }
+.pb-dateline::after {
+  content: ''; display: block; width: 100%; margin-top: 15px;
   border-top: 1px solid var(--pb-ink);
   box-shadow: 0 3px 0 -1.5px var(--pb-bg), 0 4px 0 -1px var(--pb-ink);
 }
-.pb-kicker {
-  font-size: 11px; letter-spacing: .32em; text-transform: uppercase;
-  color: var(--pb-muted);
-}
-.pb-title {
-  font-family: var(--font-display); font-weight: 400;
-  font-size: 56px; letter-spacing: .08em; line-height: 1.1;
-  margin: 10px 0 8px; color: var(--pb-ink);
-}
-.pb-sub { font-size: 12.5px; color: var(--pb-muted); font-style: italic; }
+.pb-dl-kicker { letter-spacing: .3em; }
+.pb-dl-sep { color: var(--pb-line); }
 
 /* —— B 列表：头条 —— */
 .pb-hero {
@@ -368,7 +367,6 @@ body[data-variant="b"] .poster-hint { color: var(--pb-muted); }
   .pa-doc-title { font-size: 26px; }
   .pa-title { font-size: 28px; }
 
-  .pb-title { font-size: 40px; }
   .pb-hero-title { font-size: 30px; }
   .pb-cols { grid-template-columns: 1fr; column-gap: 0; }
   .pb-article { padding-top: 32px; }
