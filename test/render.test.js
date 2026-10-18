@@ -49,15 +49,20 @@ test('renderList 空态文案', () => {
   assert.match(html, /暂无研究成果/)
 })
 
-test('renderList 渲染编号、链接与计数', () => {
+test('renderList 渲染刊头指标、头条与链接', () => {
   const html = renderList(site, [item])
+  // 头条：编号、日期与作者
   assert.match(html, /NO\.007/)
   assert.match(html, /href="\/item\/7"/)
-  assert.match(html, /共 1 条 · 按日期倒序/)
-  assert.match(html, /<span class="entry-by">军舰<\/span>/)
-  // 物化 date 字段的展示：年份 tag + 月-日（2026 即今年，t-now）
-  assert.match(html, /<span class="tag t-now">2026<\/span>/)
-  assert.match(html, /<span class="entry-date">10-16<\/span>/)
+  assert.match(html, /整理：军舰/)
+  assert.match(html, /2026-10-16/)
+  // 刊头核心指标条：收录 1 篇 / 1 位作者 / 2026 / 最近更新 10-16
+  assert.match(html, /<span class="fv">1<\/span><span class="fk">收录成果<\/span>/)
+  assert.match(html, /<span class="fv">1<\/span><span class="fk">执笔作者<\/span>/)
+  assert.match(html, /<span class="fv">2026<\/span><span class="fk">时间跨度<\/span>/)
+  assert.match(html, /<span class="fv">10-16<\/span><span class="fk">最近更新<\/span>/)
+  // 宗旨取自 site.desc
+  assert.match(html, /<div class="mast-sub">站点描述<\/div>/)
 })
 
 test('renderDetail 含 canonical、og:image 与分享 data-*', () => {

@@ -211,27 +211,16 @@
         return
       }
 
-      // 视图切换
-      var viewBtn = el.closest && el.closest('.view-btn[data-view]')
-      if (viewBtn) {
-        var to = viewBtn.getAttribute('data-view') === 'list' ? 'list' : 'grid'
-        if (to !== (document.documentElement.getAttribute('data-view') === 'list' ? 'list' : 'grid')) {
-          push('change_view_mode', { to: to })
-        }
-        return
-      }
-
-      // 首页卡片点击：跳转前上报（sendBeacon 保证导航中也能发出去）
-      var card = el.closest && el.closest('.entry-list .entry')
+      // 首页卡片点击：头条与编号条目都是卡片；跳转前上报（sendBeacon 保证导航中也能发出去）
+      var card = el.closest && el.closest('.feat, .col-item')
       if (card) {
         var href = card.getAttribute('href') || ''
         var m = /\/item\/(\d+)/.exec(href)
         if (m) {
-          var all = document.querySelectorAll('.entry-list .entry')
+          var all = document.querySelectorAll('.feat, .col-item')
           var pos = 0
           for (var k = 0; k < all.length; k++) { if (all[k] === card) { pos = k + 1; break } }
           push('select_content', {
-            view_mode: document.documentElement.getAttribute('data-view') === 'list' ? 'list' : 'grid',
             position: pos,
           }, Number(m[1]), '/')
           flush()

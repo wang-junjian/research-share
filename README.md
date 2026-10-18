@@ -119,7 +119,7 @@ npm start
 
 ```sql
 select e.session_id,
-       bool_or(e.event in ('select_content','change_view_mode')) as interacted,
+       bool_or(e.event = 'select_content')                      as interacted,
        bool_or(e.event = 'view_item')                            as viewed,
        bool_or(e.event = 'outbound_click')                        as jumped
 from research_events e
@@ -157,7 +157,6 @@ group by e.session_id
 │   ├── share.js           分享交互（链接、海报、纯文本）
 │   ├── track.js           埋点采集层
 │   ├── cloud.js           云服务客户端初始化
-│   ├── fit.js             布局适配
 │   └── vendor/
 │       ├── fonts/         自托管字体（不依赖外部 CDN）
 │       └── workbuddy-cloud-sdk.global.js
@@ -180,7 +179,7 @@ group by e.session_id
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |---|---|---|---|
-| GET | `/` | 无 | 列表页（SSR，带分页与视图切换） |
+| GET | `/` | 无 | 列表页（SSR，杂志特稿版式：刊头 + 头条 + 双栏编号） |
 | GET | `/item/:id` | 无 | 详情页（SSR，带 OG 标签） |
 | GET | `/og/:id.png` | 无 | 分享封面图 |
 | GET | `/admin` | 登录 | 后台管理 |
@@ -210,7 +209,6 @@ group by e.session_id
 | `page_view` | 页面加载（**客户端与服务端各记一条**） | `page`、`source` |
 | `view_item` | 打开详情页 | `item_id` |
 | `select_content` | 列表页点击卡片 | `item_id` |
-| `change_view_mode` | 切换列表/网格视图 | `mode` |
 | `outbound_click` | 点击「查看原文」 | `item_id` |
 | `share` | 点击任一分享按钮 | `method`（5 个值） |
 | `error` | 前端捕获到异常 | `code` |
