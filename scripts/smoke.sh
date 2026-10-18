@@ -123,7 +123,9 @@ check "owner 固定为军舰" "军舰" "$(py "$TMP/r.json" "d['item']['owner']")
 req GET "/api/items/$ID"
 check "GET 单条 → 200" 200 "$CODE"
 check "标题回读一致" "冒烟测试条目" "$(py "$TMP/r.json" "d['item']['title']")"
-check "带 page_url" True "$(py "$TMP/r.json" "('$BASE/item/' + str(d['item']['id'])) in d['item']['page_url']")"
+# page_url 由服务端配置的 SITE_URL 派生（不能靠请求 Host 拼，见 server.js 配置段注释），
+# 所以这里只断言路径部分，不要求与 BASE 同源 —— 否则本地 BASE 打配了 SITE_URL 的服务会误报
+check "带 page_url" True "$(py "$TMP/r.json" "('/item/' + str(d['item']['id'])) in d['item']['page_url']")"
 
 req POST /api/items "{\"title\":\"冒烟测试条目（改）\",\"summary\":\"由 smoke.sh 写入，结尾会删掉。\",\"url\":\"https://example.com/smoke\",\"source_key\":\"$KEY\"}"
 check "同 source_key 再提交 → 200" 200 "$CODE"
