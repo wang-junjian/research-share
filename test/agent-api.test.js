@@ -53,28 +53,37 @@ test('pickDate: 只收 YYYY-MM-DD', () => {
   assert.throws(() => pickDate({ date: 20261016 }, 'date'), /YYYY-MM-DD/)
 })
 
-test('apiShape: 编号、page_url 与 og_image 由 id 与 siteUrl 派生', () => {
+test('apiShape: 白名单浅映射，消费物化字段，不泄漏未列字段', () => {
   const shaped = apiShape({
     id: 7,
     title: 'T',
     summary: 'S',
     url: 'https://a.com',
-    item_date: '2026-10-16T00:00:00Z',
     owner_name: '军舰',
     source_key: 'k',
     source_agent: 'main-agent',
     created_at: 'c',
     updated_at: 'u',
-  }, 'https://share.example.com')
+    // 物化派生字段（由 items-store 给出，apiShape 不再推导）
+    no: 'NO.007',
+    no_num: '007',
+    date: '2026-10-16',
+    page_url: 'https://share.example.com/item/7',
+    og_image: 'https://share.example.com/og/7.png',
+    item_date: '2026-10-16T00:00:00Z', // 内部字段，不应出现在输出
+  })
   assert.equal(shaped.no, 'NO.007')
   assert.equal(shaped.page_url, 'https://share.example.com/item/7')
   assert.equal(shaped.og_image, 'https://share.example.com/og/7.png')
   assert.equal(shaped.date, '2026-10-16')
   assert.equal(shaped.owner, '军舰')
+  assert.ok(!('item_date' in shaped))
+  assert.ok(!('owner_name' in shaped))
+  assert.ok(!('no_num' in shaped)) // 分享条专用，不进公开 API
 })
 
 test('apiShape: 可空字段缺省为 null', () => {
-  const shaped = apiShape({ id: 1, title: 'T', summary: 'S', url: 'u', item_date: '2026-01-01' }, 'https://x.com')
+  const shaped = apiShape({ id: 1, title: 'T', summary: 'S', url: 'u', no: 'NO.001', date: '2026-01-01', page_url: 'p', og_image: 'o' })
   assert.equal(shaped.owner, null)
   assert.equal(shaped.source_key, null)
   assert.equal(shaped.no, 'NO.001')

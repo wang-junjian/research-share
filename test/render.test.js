@@ -1,16 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { esc, truncate, fmtDate, layout, renderList, renderDetail, renderError } from '../lib/render.js'
+import { esc, truncate, layout, renderList, renderDetail, renderError } from '../lib/render.js'
 
 const site = { name: '研究成果', desc: '站点描述', url: 'https://example.com', favicon: 'data:image/svg+xml,x' }
 
+// render 消费的是 items-store 物化后的 item：携带 no/date/page_url/og_image，
+// 不再有 item_date（日期归一化是条目存储的内部细节）
 const item = {
   id: 7,
   title: '一篇成果',
   summary: '这是概览。',
   url: 'https://src.example.com/a',
-  item_date: '2026-10-16',
   owner_name: '军舰',
+  no: 'NO.007',
+  no_num: '007',
+  date: '2026-10-16',
+  page_url: 'https://example.com/item/7',
+  og_image: 'https://example.com/og/7.png',
 }
 
 test('esc 转义 HTML 特殊字符', () => {
@@ -23,11 +29,6 @@ test('truncate 超长截断并补省略号，短文本原样', () => {
   assert.equal(truncate('短', 5), '短')
   assert.equal(truncate('一二三四五六七', 5), '一二三四五…')
   assert.equal(truncate(null, 5), '')
-})
-
-test('fmtDate 只取前 10 位', () => {
-  assert.equal(fmtDate('2026-10-16T12:00:00Z'), '2026-10-16')
-  assert.equal(fmtDate(''), '')
 })
 
 test('layout 含 og meta 与 favicon，无 ogImage 时不输出 image meta', () => {
@@ -54,6 +55,9 @@ test('renderList 渲染编号、链接与计数', () => {
   assert.match(html, /href="\/item\/7"/)
   assert.match(html, /共 1 条 · 按日期倒序/)
   assert.match(html, /<span class="entry-by">军舰<\/span>/)
+  // 物化 date 字段的展示：年份 tag + 月-日（2026 即今年，t-now）
+  assert.match(html, /<span class="tag t-now">2026<\/span>/)
+  assert.match(html, /<span class="entry-date">10-16<\/span>/)
 })
 
 test('renderDetail 含 canonical、og:image 与分享 data-*', () => {
@@ -61,6 +65,7 @@ test('renderDetail 含 canonical、og:image 与分享 data-*', () => {
   assert.match(html, /<link rel="canonical" href="https:\/\/example\.com\/item\/7">/)
   assert.match(html, /<meta property="og:image" content="https:\/\/example\.com\/og\/7\.png">/)
   assert.match(html, /data-no="007"/)
+  assert.match(html, /data-date="2026-10-16"/)
   assert.match(html, /data-url="https:\/\/example\.com\/item\/7"/)
   assert.match(html, /og:type" content="article"/)
 })
