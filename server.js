@@ -1,5 +1,4 @@
 import http from 'node:http'
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createWorkBuddyCloud } from '@tencent-ai/workbuddy-cloud-sdk'
 import { drawCover } from './og-image.js'
@@ -9,28 +8,15 @@ import { renderList, renderDetail, renderError } from './lib/render.js'
 import { createTrack } from './lib/track.js'
 import { createAgentApi } from './lib/agent-api.js'
 import { createItemsStore } from './lib/items-store.js'
-import { sendJson, CORS_HEADERS } from './lib/http.js'
+import { createStaticFiles } from './lib/static-files.js'
+import { sendJson, sendHtml, CORS_HEADERS } from './lib/http.js'
 
 // ---------------------------------------------------------------------------
 // 路由 handler：纯函数式 module，全部依赖经 deps 注入，import 本文件不起服务。
 // 测试（test/server.test.js）与真实入口共用这一个 handler —— 同一条 seam。
 // ---------------------------------------------------------------------------
 
-function send(res, code, html) {
-  res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8' })
-  res.end(html)
-}
-
-const STATIC_TYPES = {
-  js: 'text/javascript; charset=utf-8',
-  css: 'text/css; charset=utf-8',
-  svg: 'image/svg+xml',
-  woff2: 'font/woff2',
-  woff: 'font/woff',
-  png: 'image/png',
-}
-
-export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml }) {
+export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }) {
   return async function handler(req, res) {
     const rawUrl = req.url || '/'
     let reqUrl
@@ -50,37 +36,24 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         return await handleApi(req, res, path, reqUrl)
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') {
-        return send(res, 405, renderError(site, '仅支持 GET 请求'))
+        return sendHtml(res, 405, renderError(site, '仅支持 GET 请求'))
       }
       if (path === '/' || path === '/index.html') {
         const items = await itemsStore.list()
         const html = renderList(site, items)
         // 先发埋点请求（RPC 立刻发出），再写响应 —— 两者重叠，不给用户加延迟
         trackServerPageView(req, { page: '/' })
-        return send(res, 200, html)
+        return sendHtml(res, 200, html)
       }
       if (path === '/admin') {
         const html = await getAdminHtml()
-        return send(res, 200, html)
+        return sendHtml(res, 200, html)
       }
       if (path.startsWith('/assets/')) {
-        const rel = path.slice('/assets/'.length)
-        // 仅放行 assets 下最多三层普通文件名（如 vendor/fonts/x.woff2），杜绝路径穿越
-        if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+){0,2}$/.test(rel) || rel.includes('..')) {
-          return send(res, 404, renderError(site, '资源不存在'))
-        }
-        try {
-          const buf = await readFile(fileURLToPath(new URL('./assets/' + rel, import.meta.url)))
-          const ext = rel.slice(rel.lastIndexOf('.') + 1)
-          const isFont = ext === 'woff2' || ext === 'woff'
-          res.writeHead(200, {
-            'Content-Type': STATIC_TYPES[ext] || 'application/octet-stream',
-            'Cache-Control': isFont ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
-          })
-          return res.end(buf)
-        } catch {
-          return send(res, 404, renderError(site, '资源不存在'))
-        }
+        // 「怎么发」是静态资源 module 的内部细节，路由层只问命中与否
+        const served = await tryServeStatic(path.slice('/assets/'.length), res)
+        if (!served) return sendHtml(res, 404, renderError(site, '资源不存在'))
+        return undefined
       }
       // 微信卡片封面图：服务端实时生成，不落盘、不占云存储
       const ogm = path.match(/^\/og\/(\d+)\.png$/)
@@ -102,13 +75,13 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       if (m) {
         const it = await itemsStore.find(Number(m[1]))
         if (!it) {
-          return send(res, 404, renderError(site, '未找到该研究成果'))
+          return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
         }
         const html = renderDetail(site, it)
         trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}` })
-        return send(res, 200, html)
+        return sendHtml(res, 200, html)
       }
-      return send(res, 404, renderError(site, '页面不存在'))
+      return sendHtml(res, 404, renderError(site, '页面不存在'))
     } catch (err) {
       // 响应已经发出去一半（例如 body 读流中途出错），再写头会抛 write-after-end
       if (res.headersSent || res.writableEnded) {
@@ -123,7 +96,7 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       if (isApi) {
         return sendJson(res, 500, { ok: false, error: 'internal_error', message: '服务暂时不可用' }, CORS_HEADERS)
       }
-      return send(res, 500, renderError(site, '服务暂时不可用，请稍后重试'))
+      return sendHtml(res, 500, renderError(site, '服务暂时不可用，请稍后重试'))
     }
   }
 }
@@ -176,13 +149,11 @@ async function main() {
     demo: DEMO,
   }).replaceAll('<', '\\u003c')
 
-  let adminHtmlCache = null
-  async function getAdminHtml() {
-    if (adminHtmlCache) return adminHtmlCache
-    const tpl = await readFile(fileURLToPath(new URL('./admin.html', import.meta.url)), 'utf8')
-    adminHtmlCache = tpl.replaceAll('__PUBLIC_CONFIG__', PUBLIC_CONFIG_JSON)
-    return adminHtmlCache
-  }
+  const { tryServeStatic, getAdminHtml } = createStaticFiles({
+    assetsDir: fileURLToPath(new URL('./assets/', import.meta.url)),
+    adminTemplate: fileURLToPath(new URL('./admin.html', import.meta.url)),
+    publicConfigJson: PUBLIC_CONFIG_JSON,
+  })
 
   const cloud = DEMO
     ? createDemoCloud()
@@ -201,7 +172,7 @@ async function main() {
   const { handleApi } = createAgentApi({ cloud, site, itemsStore })
 
   const server = http.createServer(
-    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml }),
+    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }),
   )
 
   server.listen(PORT, '0.0.0.0', () => {

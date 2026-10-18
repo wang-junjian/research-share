@@ -13,6 +13,7 @@
 
 - **演示模式（Demo）**：缺 `CLOUD_ENDPOINT` / `CLOUD_PUBLISHABLE_KEY` 时启用。只读、零依赖，用 `data/sample-items.json` 渲染界面；写操作与埋点全部丢弃。适配器在 `lib/demo-cloud.js`。
 - **页面模板（Render）**：服务端渲染的 HTML 生成，纯函数群，位于 `lib/render.js`。视觉见 `assets/style.css`（浅色纸感 + 朱红批注）。
+- **静态资源（Static Files）**：磁盘文件 → HTTP 响应的深模块（`lib/static-files.js`）。`createStaticFiles({ assetsDir, adminTemplate, publicConfigJson })` 返回 `{ tryServeStatic, getAdminHtml }`；mime 表、路径穿越防护（最多三层普通文件名）、字体 immutable / 其余 300s 的缓存策略、admin 模板的 `__PUBLIC_CONFIG__` 替换与缓存全部收在 interface 后面。未命中返回 `false` 且不写字节，怎么 404 由路由层决定。
 - **微信分享卡片**：详情页的 og meta + `/og/:id.png` 封面图（`og-image.js` 实时生成 PNG，不落盘）。
 
 ## 接口与埋点
