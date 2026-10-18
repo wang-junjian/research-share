@@ -146,6 +146,19 @@ test('方法语义：OPTIONS 204，GET 405', async () => {
   })
 })
 
+test('口径版本：合法的 ver 落进 p_app_version，非法的不传（走数据库默认 v1）', async () => {
+  await withTrack(async (base, cloud) => {
+    await post(base, { v: 'visitor_abc', s: 'session_xyz', ver: 'v2', events: [{ n: 'page_view', pg: '/' }] })
+    await post(base, { v: 'visitor_abc', s: 'session_xyz', ver: 'not-a-version', events: [{ n: 'page_view', pg: '/' }] })
+    await post(base, { v: 'visitor_abc', s: 'session_xyz', events: [{ n: 'page_view', pg: '/' }] })
+    await waitFor(() => cloud.calls.length === 3)
+
+    assert.equal(cloud.calls[0].args.p_app_version, 'v2')
+    assert.equal('p_app_version' in cloud.calls[1].args, false) // 非法 → 不传
+    assert.equal('p_app_version' in cloud.calls[2].args, false) // 缺失 → 不传
+  })
+})
+
 test('单批事件数截断到 20 条，多余的丢弃', async () => {
   await withTrack(async (base, cloud) => {
     const events = Array.from({ length: 25 }, (_, i) => ({ n: `ev_${i}`, pg: '/' }))

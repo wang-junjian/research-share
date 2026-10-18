@@ -162,7 +162,7 @@ group by e.session_id
 │       ├── fonts/         自托管字体（不依赖外部 CDN）
 │       └── workbuddy-cloud-sdk.global.js
 ├── .env.example           配置样例（真实 .env 不进仓库）
-├── db/                    数据库迁移（01 → 02 → 03）
+├── db/                    数据库迁移（01 → 02 → 03 → 04）
 ├── data/
 │   └── sample-items.json  演示模式示例数据
 ├── docs/                  接口说明与埋点设计
