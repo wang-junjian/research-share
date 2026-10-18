@@ -27,8 +27,7 @@
     "start": "node server.js",
     "test": "node --test",
     "preflight": "bash scripts/preflight.sh",
-    "smoke": "bash scripts/smoke.sh",
-    "verify:og": "node scripts/verify-og.mjs"
+    "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
     "@tencent-ai/workbuddy-cloud-sdk": "dev"
