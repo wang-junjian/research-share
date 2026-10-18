@@ -214,22 +214,53 @@ body[data-variant="b"] .btn-ghost:hover { background: var(--pb-accent-soft); bor
 body[data-variant="b"] .empty { background: transparent; border-color: var(--pb-line); color: var(--pb-muted); }
 body[data-variant="b"] .empty h3 { color: var(--pb-ink-2); }
 
-/* —— B 列表：日期行（报名已由顶栏承担，这里只留纤细的报刊日期行 + 双细线） —— */
-.pb-dateline {
-  display: block; text-align: center;
-  padding: 18px 0 0;
-  font-size: 11.5px; letter-spacing: .18em; color: var(--pb-muted);
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-.pb-dateline > span { margin: 0 5px; }
-.pb-dateline::after {
-  content: ''; display: block; width: 100%; margin-top: 15px;
+/* —— B 列表：报头刊头（三段式：细栏 / 刊名+宗旨 / 核心指标条） —— */
+.pb-masthead { text-align: center; padding: 26px 0 0; position: relative; margin-bottom: 4px; }
+.pb-masthead::after {
+  content: ''; display: block; margin-top: 22px;
   border-top: 1px solid var(--pb-ink);
   box-shadow: 0 3px 0 -1.5px var(--pb-bg), 0 4px 0 -1px var(--pb-ink);
 }
-.pb-dl-kicker { letter-spacing: .3em; }
-.pb-dl-sep { color: var(--pb-line); }
+/* 顶部细栏：刊号 · 印章 · 年份跨度，上下发丝线夹住 */
+.pb-mast-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border-top: 1px solid var(--pb-line); border-bottom: 1px solid var(--pb-line);
+  padding: 7px 2px;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em;
+  color: var(--pb-muted);
+}
+.pb-mast-seal {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--pb-accent); color: var(--pb-accent); border-radius: 6px;
+  font-family: var(--font-display); font-size: 14px;
+}
+.pb-title {
+  font-family: var(--font-display); font-weight: 400;
+  font-size: clamp(46px, 8vw, 76px); letter-spacing: .1em; line-height: 1.08;
+  margin: 22px 0 10px; color: var(--pb-ink);
+}
+.pb-sub {
+  font-size: 14px; color: var(--pb-ink-2); font-style: italic;
+  font-family: var(--font-display); letter-spacing: .04em;
+}
+/* 核心指标条：四格，发丝线分隔，数字用衬线大字 */
+.pb-facts {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--pb-line); border-radius: 2px;
+  margin-top: 24px;
+}
+.pb-fact { padding: 12px 8px 10px; border-left: 1px solid var(--pb-line); }
+.pb-fact:first-child { border-left: 0; }
+.pb-fact-v {
+  display: block; font-family: var(--font-display); font-size: 24px;
+  line-height: 1.15; color: var(--pb-ink); font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+.pb-fact-k {
+  display: block; margin-top: 3px;
+  font-size: 10.5px; letter-spacing: .18em; color: var(--pb-muted);
+}
 
 /* —— B 列表：头条 —— */
 .pb-hero {
@@ -367,6 +398,11 @@ body[data-variant="b"] .poster-hint { color: var(--pb-muted); }
   .pa-doc-title { font-size: 26px; }
   .pa-title { font-size: 28px; }
 
+  .pb-title { font-size: 42px; letter-spacing: .06em; }
+  .pb-mast-strip { font-size: 10.5px; }
+  .pb-facts { grid-template-columns: 1fr 1fr; }
+  .pb-fact:nth-child(3) { border-left: 0; }
+  .pb-fact:nth-child(n+3) { border-top: 1px solid var(--pb-line); }
   .pb-hero-title { font-size: 30px; }
   .pb-cols { grid-template-columns: 1fr; column-gap: 0; }
   .pb-article { padding-top: 32px; }
