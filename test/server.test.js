@@ -4,61 +4,42 @@ import http from 'node:http'
 import { createHandler } from '../server.js'
 import { createItemsStore } from '../lib/items-store.js'
 import { createAgentApi } from '../lib/agent-api.js'
+import { fakeCloud as fakeQueryCloud } from './helpers/fake-cloud.js'
 
-// 最小可控 fake cloud：rows 可随时替换，模拟「另一个写入者」
-// （admin 前端经浏览器 SDK 直连数据库，绕过本进程缓存）
+// 查询链 fake 见 test/helpers/fake-cloud.js；这里在其上挂 rpc 仿真，
+// 仿真 db/06 升级后写函数的库内语义，让全栈缝测试能断言外部行为；
+// 仿真只覆盖测试用到的三个写函数，真实 SQL 行为由 scripts/smoke.sh 对云验证
 function fakeCloud(rows) {
-  const state = { rows }
-  const builder = {
-    filters: [],
-    select() { return builder },
-    order() { return builder },
-    eq(col, val) { builder.filters.push([col, val]); return builder },
-    then(resolve) {
-      const data = state.rows.filter((r) => builder.filters.every(([c, v]) => r[c] === v))
-      return resolve({ data, error: null })
-    },
+  const base = fakeQueryCloud(rows)
+  base.database.rpc = async (fn, args) => {
+    if (fn === 'agent_upsert_item') return { data: upsertRow(base.state, args), error: null }
+    if (fn === 'agent_upsert_items') {
+      let created = 0
+      let updated = 0
+      const items = []
+      for (const it of args.p_items) {
+        const r = upsertRow(base.state, {
+          p_title: it.title, p_summary: it.summary, p_url: it.url,
+          p_date: it.date, p_source_key: it.source_key, p_doc_html: it.doc_html,
+        })
+        if (r.action === 'created') created++; else updated++
+        items.push(r)
+      }
+      return { data: { created, updated, total: created + updated, items }, error: null }
+    }
+    if (fn === 'agent_patch_item') {
+      const row = base.state.rows.find((r) => r.id === args.p_id)
+      if (!row) return { data: null, error: new Error(`item_not_found: ${args.p_id}`) }
+      if (args.p_title) row.title = args.p_title
+      if (args.p_summary) row.summary = args.p_summary
+      if (args.p_url) row.url = args.p_url
+      if (args.p_date) row.item_date = args.p_date
+      row.updated_at = 'u2'
+      return { data: { action: 'updated', id: row.id }, error: null }
+    }
+    return { data: null, error: null }
   }
-  return {
-    state,
-    database: {
-      // from() 返回同一个 builder，每次调用先清掉上一条链残留的 eq 过滤
-      from: () => {
-        builder.filters = []
-        return builder
-      },
-      // 仿真 db/06 升级后写函数的库内语义，让全栈缝测试能断言外部行为；
-      // 仿真只覆盖测试用到的三个写函数，真实 SQL 行为由 scripts/smoke.sh 对云验证
-      rpc: async (fn, args) => {
-        if (fn === 'agent_upsert_item') return { data: upsertRow(state, args), error: null }
-        if (fn === 'agent_upsert_items') {
-          let created = 0
-          let updated = 0
-          const items = []
-          for (const it of args.p_items) {
-            const r = upsertRow(state, {
-              p_title: it.title, p_summary: it.summary, p_url: it.url,
-              p_date: it.date, p_source_key: it.source_key, p_doc_html: it.doc_html,
-            })
-            if (r.action === 'created') created++; else updated++
-            items.push(r)
-          }
-          return { data: { created, updated, total: created + updated, items }, error: null }
-        }
-        if (fn === 'agent_patch_item') {
-          const row = state.rows.find((r) => r.id === args.p_id)
-          if (!row) return { data: null, error: new Error(`item_not_found: ${args.p_id}`) }
-          if (args.p_title) row.title = args.p_title
-          if (args.p_summary) row.summary = args.p_summary
-          if (args.p_url) row.url = args.p_url
-          if (args.p_date) row.item_date = args.p_date
-          row.updated_at = 'u2'
-          return { data: { action: 'updated', id: row.id }, error: null }
-        }
-        return { data: null, error: null }
-      },
-    },
-  }
+  return base
 }
 
 // agent_upsert_item 语义仿真：携带 doc_html 即文档型（url 置空）；按 source_key 判
@@ -238,6 +219,8 @@ test('详情页·文档型：sandbox iframe 指向托管地址，含全屏入口
     assert.match(html, /<iframe[^>]*src="https:\/\/x\.com\/item\/9\/doc"/)
     assert.match(html, /全屏阅读/)
     assert.match(html, /href="https:\/\/x\.com\/item\/9\/doc"/)
+    // 「查看原文」按钮与链接型同一 detail-foot 位置，指向物化后的托管地址
+    assert.match(html, /<a[^>]*href="https:\/\/x\.com\/item\/9\/doc"[^>]*>查看原文<\/a>/)
     assert.ok(!html.includes('DOC-MARKER-报告正文'))
     // 标元区不变
     assert.match(html, /季度数据报告/)
