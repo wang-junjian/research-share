@@ -137,10 +137,10 @@ async function main() {
     "<text x='32' y='45' font-family='Songti SC,serif' font-size='34' fill='%23E0A458' text-anchor='middle'>研</text></svg>"
   const FAVICON = 'data:image/svg+xml,' + FAVICON_SVG.replaceAll('#', '%23')
 
-  // 传给页面模板 module 的站点配置（lib/render.js 不读环境变量）
-  const site = { name: SITE_NAME, desc: SITE_DESC, url: SITE_URL, favicon: FAVICON }
-
-  // 注入 admin.html 的公开配置（publishableKey 无权限语义，可进源码）
+  // 注入页面的公开配置（publishableKey 无权限语义，可进源码）。
+  // 同一份配置走两条路：admin 模板经 __PUBLIC_CONFIG__ 占位符替换；
+  // 公开页经 site.publicConfigJson 由页面模板内联（lib/render.js）。
+  // 演示模式下公开页不加载 SDK（后台本就不可用），传 null。
   const PUBLIC_CONFIG_JSON = JSON.stringify({
     endpoint: ENDPOINT,
     oauthRelayBaseUrl: OAUTH_RELAY,
@@ -148,6 +148,15 @@ async function main() {
     // 前端据此把「配置缺失」和「演示模式」区分开，给出不同提示
     demo: DEMO,
   }).replaceAll('<', '\\u003c')
+
+  // 传给页面模板 module 的站点配置（lib/render.js 不读环境变量）
+  const site = {
+    name: SITE_NAME,
+    desc: SITE_DESC,
+    url: SITE_URL,
+    favicon: FAVICON,
+    publicConfigJson: DEMO ? null : PUBLIC_CONFIG_JSON,
+  }
 
   const { tryServeStatic, getAdminHtml } = createStaticFiles({
     assetsDir: fileURLToPath(new URL('./assets/', import.meta.url)),

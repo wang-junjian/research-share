@@ -23,6 +23,13 @@
 - **口径版本（ver）**：客户端埋点上报携带的版本号（`assets/track.js` 的 `VERSION`，形如 `v1`；改口径必须递增，否则跨版本趋势不可比）。经 `track_event(p_app_version)` 落进 `research_events.app_version` 列，看板 versions 维度据此分组。格式非法（非 `^v\d{1,8}$`）时服务端不传参，走数据库默认 `'v1'`。迁移见 `db/04-track-event-version.sql`。
 - **访客识别**：UA 解析（device / os / browser / isBot 枚举）与来源归类（wechat / zhihu / search / direct / internal / other）。IP 只存加盐 SHA-256 前 32 位，不落明文。
 
+## 身份与登录
+
+- **登录态**：用户登录后的身份呈现。仅存在于浏览器 localStorage（云服务 SDK 的 SessionStore），服务端不感知身份；公开页顶栏默认渲染「登录」入口，由 `assets/auth-chip.js` 在客户端读会话后替换为头像+用户名。决策记录见 [ADR-0002](docs/adr/0002-auth-state-client-side.md)。
+- **会话（Session）**：云服务 SDK 颁发的 `{accessToken, refreshToken, expiresAt, user}` 合称，存于浏览器 localStorage；过期判断与刷新交给 SDK 的 `getSession()`，业务代码不自实现。
+- **管理员**：角色之一，可管理全部研究成果与数据看板。
+- **录入者**：角色之一（普通用户），仅能录入与修改自己录入的成果。
+
 ## 架构词汇
 
 架构讨论使用 `/codebase-design` 的词汇：**module**、**interface**、**depth**、**seam**、**adapter**、**leverage**、**locality**。决策记录见 `docs/adr/`。
