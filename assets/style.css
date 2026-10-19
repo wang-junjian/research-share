@@ -166,7 +166,7 @@ body.page-admin .topbar .brand a:hover .brand-name { color: var(--brand); }
 }
 .topbar-spacer { flex: 1; }
 
-/* 顶栏右侧入口（管理） */
+/* 顶栏右侧入口（登录 / 登录态） */
 .topbar-nav { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .topbar-link {
   display: inline-flex; align-items: center; gap: 6px;
@@ -186,6 +186,18 @@ body.page-admin .topbar .brand a:hover .brand-name { color: var(--brand); }
   background: var(--brand-soft);
 }
 .topbar-link svg { flex-shrink: 0; }
+
+/* 顶栏登录态：头像+用户名（assets/auth-chip.js 替换默认「登录」入口） */
+.topbar-user { gap: 7px; padding-left: 6px; }
+.topbar-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.topbar-avatar-text {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--brand-soft); color: var(--brand);
+  font-size: 11px; font-weight: 600;
+}
 
 .search-wrap { position: relative; flex: 1; max-width: 360px; }
 .search-wrap input {

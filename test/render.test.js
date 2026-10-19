@@ -81,6 +81,29 @@ test('renderDetail 转义标题中的 HTML', () => {
   assert.doesNotMatch(html, /<h1 class="detail-title"><img/)
 })
 
+test('layout 顶栏默认渲染「登录」入口（挂载点 data-auth-chip）', () => {
+  const html = layout(site, { title: 'T', description: 'D', body: 'B' })
+  assert.match(html, /<nav class="topbar-nav" data-auth-chip>/)
+  assert.match(html, /<a class="topbar-link" href="\/admin">/)
+  assert.match(html, />登录</)
+})
+
+test('layout 无 publicConfigJson 时不加载登录态脚本', () => {
+  const html = layout(site, { title: 'T', description: 'D', body: 'B' })
+  assert.doesNotMatch(html, /PUBLIC_CONFIG/)
+  assert.doesNotMatch(html, /workbuddy-cloud-sdk/)
+  assert.doesNotMatch(html, /auth-chip\.js/)
+})
+
+test('layout 有 publicConfigJson 时注入公开配置与登录态脚本', () => {
+  const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
+  const html = layout(authSite, { title: 'T', description: 'D', body: 'B' })
+  assert.match(html, /window\.PUBLIC_CONFIG = \{"endpoint":"https:\/\/e\.example\.com"\}/)
+  assert.match(html, /<script src="\/assets\/vendor\/workbuddy-cloud-sdk\.global\.js" defer><\/script>/)
+  assert.match(html, /<script src="\/assets\/cloud\.js" defer><\/script>/)
+  assert.match(html, /<script src="\/assets\/auth-chip\.js" defer><\/script>/)
+})
+
 test('renderError 渲染错误页', () => {
   const html = renderError(site, '服务暂时不可用')
   assert.match(html, /服务暂时不可用/)

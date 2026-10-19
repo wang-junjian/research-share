@@ -157,6 +157,7 @@ group by e.session_id
 │   ├── share.js           分享交互（链接、海报、纯文本）
 │   ├── track.js           埋点采集层
 │   ├── cloud.js           云服务客户端初始化
+│   ├── auth-chip.js       公开页顶栏登录态（读会话，替换「登录」入口）
 │   └── vendor/
 │       ├── fonts/         自托管字体（不依赖外部 CDN）
 │       └── workbuddy-cloud-sdk.global.js
