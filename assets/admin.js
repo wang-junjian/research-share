@@ -301,9 +301,9 @@
     // 文档型成果（GLOSSARY: 文档型成果）的原文不落库，url 恒为空；
     // 链接位置只读展示派生托管地址（GLOSSARY: 托管地址），表单不能创建/替换文档（第一期）。
     // admin 与站点同源，托管地址直接由 origin 拼出。
-    // 型别直接看 kind（存量行默认 'link'，url 可空仅文档型），不再用 url 启发式兜底。
-    var isDoc = row.kind === 'doc'
-    var docUrl = location.origin + '/item/' + row.id + '/doc'
+    // 型别判定与托管地址经 App 的条目公共身份派生（GLOSSARY: 条目公共身份），不自行拼。
+    var isDoc = App.isDoc(row)
+    var docUrl = location.origin + App.docPath(row.id)
     var m = App.mountModal(
       '<div class="modal" style="max-width:560px">' +
       '  <div class="modal-head">' +
@@ -602,7 +602,7 @@
       var row = byId(id) || state.rows.find(function (r) { return r.id === id })
       if (!row) return
       var act = btn.getAttribute('data-act')
-      if (act === 'open') window.open('/item/' + row.id, '_blank')
+      if (act === 'open') window.open(App.itemPath(row.id), '_blank')
       else if (act === 'edit') openEditor(row)
       else if (act === 'del') deleteOne(row)
     })

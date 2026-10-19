@@ -217,14 +217,15 @@
 
   /* ---------------- 成功态：直达详情页分享（A2） ---------------- */
   function showDone(m, payload, id, user) {
-    var num = String(id).padStart(3, '0')
-    var pagePath = '/item/' + id
+    // 编号与详情页路径经 App 的条目公共身份派生（GLOSSARY: 条目公共身份），不自行拼
+    var no = App.itemNo(id)
+    var pagePath = App.itemPath(id)
     var card = m.el.querySelector('.modal')
     card.innerHTML =
       '<div class="modal-head"><h3>已发布</h3></div>' +
       '<div class="modal-body">' +
       '  <div class="qs-done">' +
-      '    <span class="qs-done-no">NO.' + num + '</span>' +
+      '    <span class="qs-done-no">' + no + '</span>' +
       '    <div class="qs-done-title">' + App.esc(payload.title) + '</div>' +
       '    <div class="qs-done-url">' + App.esc(location.origin + pagePath) + '</div>' +
       '    <p class="qs-done-hint">详情页内含完整分享条：复制链接、复制文字、生成海报。</p>' +

@@ -271,7 +271,7 @@
       var r = rate(x)
       var noJump = x.views >= 20 && r < 0.4
       return '<tr>' +
-        '<td class="c-time" style="color:var(--brand)">NO.' + String(x.id).padStart(3, '0') + '</td>' +
+        '<td class="c-time" style="color:var(--brand)">' + App.itemNo(x.id) + '</td>' +
         '<td class="c-title">' + esc(x.title) +
         (noJump ? ' <span class="an-tag">点开不跳转</span>' : '') + '</td>' +
         '<td style="text-align:right"><div class="an-cellbar" style="justify-content:flex-end">' +
@@ -296,7 +296,7 @@
         '</td></tr>' +
         show.map(function (x) {
           return '<tr class="is-faded">' +
-            '<td class="c-time" style="color:var(--brand)">NO.' + String(x.id).padStart(3, '0') + '</td>' +
+            '<td class="c-time" style="color:var(--brand)">' + App.itemNo(x.id) + '</td>' +
             '<td class="c-title">' + esc(x.title) +
             (x.exposed ? ' <span class="an-tag is-warn">有曝光无人点</span>' : ' <span class="an-tag">新发布</span>') + '</td>' +
             '<td class="an-num" style="text-align:right"><span class="an-zero">0</span></td>' +
@@ -433,7 +433,7 @@
           return '<div class="ln">' +
             '<span class="t">' + esc(e.t) + '</span>' +
             '<span class="ev" title="' + esc(e.event) + '">' + esc(EVENT_LABEL[e.event] || e.event) + '</span>' +
-            '<span class="no">' + (e.no ? 'NO.' + String(e.no).padStart(3, '0') : '—') + '</span>' +
+            '<span class="no">' + (e.no ? App.itemNo(e.no) : '—') + '</span>' +
             '<span style="color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(streamDetail(e)) + '</span>' +
             '<span class="mt">' + esc([e.device === 'mobile' ? '手机' : e.device === 'tablet' ? '平板' : e.device === 'desktop' ? '桌面' : '', e.kind && e.kind !== 'other' ? e.kind : ''].filter(Boolean).join(' · ')) + '</span>' +
             '</div>'
