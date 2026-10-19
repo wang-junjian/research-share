@@ -2,6 +2,7 @@
  * 研究成果分享 · 后台管理页
  * 录入 / 全量浏览 / 检索筛选 / 单条与批量管理 / 导出 / 管理员设置
  * 权限：录入者可管理自己录入的，管理员可管理全部（数据库 RLS 强制）
+ * 任命权：仅初始管理员可任命 / 移除管理员（db/05 的 is_founder() 强制，UI 只是不挑逗）
  * 设计模式借鉴自「英文随手记」的 assets/admin.js
  * ============================================================ */
 (function () {
@@ -26,6 +27,7 @@
     allItems: [],       // 统计与筛选用（全量，量小直接前端算）
     adminRows: [],
     isAdmin: false,
+    isFounder: false,
     booted: false,
     loading: false
   }
@@ -58,7 +60,7 @@
   }
 
   function loadAdmins() {
-    return cloud.database.from('admins').select('user_id, added_at').then(function (res) {
+    return cloud.database.from('admins').select('user_id, added_at, is_founder').then(function (res) {
       if (res && res.error) throw res.error
       return res.data || []
     })
@@ -173,21 +175,35 @@
     else el.userAvatar.textContent = initial
   }
 
+  function roleLabel() {
+    return state.isFounder ? '初始管理员' : state.isAdmin ? '管理员' : '录入者'
+  }
+
   function renderAdminPanel() {
     el.adminCard.hidden = !state.isAdmin
     // 「数据看板」页签只对管理员显示；真正的边界在数据库函数里的 is_admin()
     if (window.AnDash) window.AnDash.setEnabled(state.isAdmin)
     if (!state.isAdmin) return
 
+    // 任命权独占（ADR-0003）：普通管理员看不到任命入口，副标题说明边界
+    el.adminCardSub.textContent = '管理员可修改 / 删除所有人的成果' +
+      (state.isFounder ? '' : ' · 任命与移除管理员归初始管理员')
+    el.promoteBox.hidden = !state.isFounder
+
     var nameOf = {}
     state.allItems.forEach(function (r) { if (r.owner_id && r.owner_name && !nameOf[r.owner_id]) nameOf[r.owner_id] = r.owner_name })
 
     el.adminList.innerHTML = state.adminRows.map(function (r) {
       var self = r.user_id === meId()
+      // founder 行不渲染「移除」：RLS 本来就删不掉（db/05），UI 不提供注定失败的按钮
+      var removable = state.isFounder && !r.is_founder
       return '<div class="admin-row">' +
         '<span>' + App.esc(nameOf[r.user_id] || '用户 ' + String(r.user_id).slice(0, 8) + '…') +
-        (self ? '<span class="self-flag">我</span>' : '') + '</span>' +
-        '<button class="btn btn-sm btn-danger" data-uid="' + App.esc(r.user_id) + '" data-act="rm-admin" type="button">移除</button>' +
+        (self ? '<span class="self-flag">我</span>' : '') +
+        (r.is_founder ? '<span class="self-flag">初始</span>' : '') + '</span>' +
+        (removable
+          ? '<button class="btn btn-sm btn-danger" data-uid="' + App.esc(r.user_id) + '" data-act="rm-admin" type="button">移除</button>'
+          : '') +
         '</div>'
     }).join('') || '<p class="auth-hint">暂无管理员记录。</p>'
 
@@ -220,7 +236,8 @@
       state.allItems = out[0]
       state.adminRows = out[1]
       state.isAdmin = state.adminRows.some(function (r) { return r.user_id === meId() })
-      el.roleTag.textContent = state.isAdmin ? '管理员' : '录入者'
+      state.isFounder = state.adminRows.some(function (r) { return r.user_id === meId() && r.is_founder })
+      el.roleTag.textContent = roleLabel()
       renderStats()
       renderChips()
       renderTable()
@@ -631,7 +648,7 @@
       pop = document.createElement('div')
       pop.className = 'speech-pop user-pop'
       pop.innerHTML = '<div class="row"><label style="width:auto">' + App.esc(App.auth.displayName()) +
-        (state.isAdmin ? '（管理员）' : '（录入者）') + '</label></div>' +
+        '（' + roleLabel() + '）</label></div>' +
         '<div class="row"><button class="btn btn-sm btn-block" id="signOutBtn" type="button">退出登录</button></div>'
       el.userChip.parentElement.style.position = 'relative'
       el.userChip.parentElement.appendChild(pop)
@@ -688,6 +705,8 @@
     el.btnSave = $('btnSave')
     el.btnCancelEdit = $('btnCancelEdit')
     el.adminCard = $('adminCard')
+    el.adminCardSub = $('adminCardSub')
+    el.promoteBox = $('promoteBox')
     el.adminList = $('adminList')
     el.ownerList = $('ownerList')
     el.manualUid = $('manualUid')
