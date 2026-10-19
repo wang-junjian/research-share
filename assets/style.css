@@ -620,6 +620,15 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 }
 .detail-src a { color: var(--ink-2); }
 
+/* 详情页·文档型成果：内嵌托管文档（CSP sandbox 隔离，见 docs/adr/0004）。
+   80vh 是折中：长文档在页内可滚动读完，又不至于把标元区挤没。 */
+.detail-doc { margin-top: 8px; }
+.detail-doc-frame {
+  display: block; width: 100%; height: 80vh;
+  border: 1px solid var(--paper-line); border-radius: 3px;
+  background: #fff;
+}
+
 /* ---------------- 分享面板：报纸边栏 ---------------- */
 .sharebar {
   border-top: 1px solid var(--ink);
@@ -786,6 +795,27 @@ body.page-pub .topbar-share b { color: var(--pub-accent); font-weight: 600; }
 .qs-row { display: grid; grid-template-columns: 1fr 150px; gap: 10px; }
 .qs-hint { flex: 1; align-self: center; font-size: 12px; color: var(--text-2); }
 .qs-hint.is-error { color: var(--danger); }
+/* 类型切换：链接 / 文档（默认链接） */
+.qs-tabs { display: flex; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; }
+.qs-tab {
+  flex: 1; padding: 7px 0; font: inherit; font-size: 13px; cursor: pointer;
+  color: var(--text-2); background: var(--surface); border: 0;
+}
+.qs-tab + .qs-tab { border-left: 1px solid var(--line-strong); }
+.qs-tab.is-on { background: var(--surface-2); color: var(--pub-accent, var(--accent)); font-weight: 600; }
+/* 文档录入面板：文件选择/拖拽 + 源码粘贴，汇入同一份文本 */
+.qs-pane { display: flex; flex-direction: column; gap: 10px; }
+.qs-pane[hidden] { display: none; }
+.qs-drop {
+  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  padding: 14px 12px; text-align: center; cursor: pointer;
+  font-size: 12.5px; color: var(--text-2); background: var(--surface-2);
+}
+.qs-drop:hover, .qs-drop.is-over { border-color: var(--pub-accent, var(--accent)); color: var(--pub-accent, var(--accent)); }
+.qs-source { font-family: var(--mono); font-size: 12px; min-height: 140px; }
+.qs-count { align-self: flex-end; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.qs-count.is-over { color: var(--danger); }
+.qs-date { max-width: 180px; }
 /* 成功态（A2：直达详情页分享） */
 .qs-done { display: flex; flex-direction: column; gap: 6px; }
 .qs-done-no { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--pub-accent, var(--accent)); }

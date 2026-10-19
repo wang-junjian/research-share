@@ -64,11 +64,18 @@ curl -s -X POST $BASE/api/items \
 |---|---|---|---|
 | `title` | string | ✅ | 1–300 字 |
 | `summary` | string | ✅ | 1–400 字（**完整概览**，卡片与详情页都用它） |
-| `url` | string | ✅ | 1–2000 字，原文链接 |
+| `url` | string | 链接型 ✅ | 1–2000 字，原文链接；**携带 `doc_html` 时不得同传**（400 `invalid_field`） |
+| `doc_html` | string | — | ≤ 1MB 字符。**携带即为文档型成果**：原文不落库，其原文链接由系统派生为站内托管地址；不携带即链接型（`url` 必填，契约不变） |
 | `date` | string | — | `YYYY-MM-DD`，缺省取当天 |
 | `source_key` | string | — | ≤300 字。**幂等键**，见下节 |
 
-`PATCH` 只接受 `title` / `summary` / `url` / `date`；`id` 从路径取。
+`PATCH` 只接受 `title` / `summary` / `url` / `date`；`id` 从路径取。**只要携带 `doc_html` 键（任意值，含空串 / null）即 `400 immutable_field`**——文档内容一经发布不可修改（`docs/adr/0004`），想换内容请删除后重新发布。文档型成果的 `url` 不落库（派生托管地址），PATCH 对它传 `url` 同样会被数据库约束拒绝。
+
+> **含脚本的文档会被平台边缘防护拦下。** 请求体里出现 `<script` 或内联事件属性（如 `onclick=`）时，
+> 网关的 WAF 会直接返回 **403 的 HTML 拦截页**（不是本接口的 JSON），请求根本到不了应用——
+> 浏览器直写数据面与 Agent API 两条通道同此限制，应用侧无法用错误码表达它。
+> 所以 `doc_html` 只收不含脚本的静态 HTML；需要图表这类交互时，请在发布前把脚本渲染成静态
+> SVG / 图片再内联。
 
 ### 返回
 
@@ -98,6 +105,8 @@ curl -s -X POST $BASE/api/items \
 ```
 
 `page_url` 是站内详情页，`og_image` 是分享卡片的封面图 —— 都是现成的，拿去发微信就行。
+
+> 文档型成果（POST 时携带 `doc_html`）的 `url` 字段返回**派生托管地址**（`$BASE/item/<id>/doc`），可直接访问、可转发；其余字段形态不变。
 
 ---
 
@@ -137,7 +146,7 @@ curl -s -X POST $BASE/api/items/batch \
 # → {"ok":true,"created":2,"updated":0,"total":2,"items":[{"ok":true,"action":"created","id":6},…]}
 ```
 
-- 单次上限 **500 条**，请求体上限 512KB
+- 单次上限 **500 条**，请求体上限 **2MB**（容纳 1MB 文档加 JSON 包装；文档型条目可混入批次）
 - **整批原子**：任一条不合格 → 整批回滚，不会写一半。已双重验证：
   ① 走接口（HTTP 400，库里无新行）；② 在数据库层直接调函数让第 2 条超长（`DATABASE_22001`，第 1 条也没落库）
 - 也接受裸数组：`-d '[{…},{…}]'`
@@ -149,11 +158,12 @@ curl -s -X POST $BASE/api/items/batch \
 | HTTP | `error` | 含义 |
 |---|---|---|
 | 400 | `missing_field` / `invalid_field` / `field_too_long` | 字段缺失、类型/格式不对、超长 |
+| 400 | `immutable_field` | PATCH 携带 `doc_html`（文档内容不可变） |
 | 400 | `invalid_json` / `invalid_body` | 请求体不是合法 JSON / 结构不对 |
 | 401 | `missing_token` / `invalid_token` | 没带 token / token 无效或已停用 |
 | 404 | `not_found` | 条目或接口不存在 |
 | 405 | `method_not_allowed` | 方法不对（响应头里有 `Allow`） |
-| 413 | `payload_too_large` | 请求体超 512KB |
+| 413 | `payload_too_large` | 请求体超 2MB |
 | 502 | `database_error` | 数据库侧异常 |
 
 ---
