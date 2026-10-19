@@ -70,7 +70,7 @@ npm start
 
 **2. 执行迁移**
 
-按顺序在云服务的 SQL 控制台执行，三个文件都是幂等的：
+按顺序在云服务的 SQL 控制台执行，全部是幂等的：
 
 ```
 db/01-research-items.sql   内容表、管理员表、is_admin()
@@ -78,6 +78,9 @@ db/02-agent-api.sql        agent_tokens、四个读写函数
 db/03-analytics.sql        埋点表、track_event()、analytics_dashboard()
 db/04-track-event-version.sql   track_event() 接入口径版本
 db/05-founder-admin.sql    初始管理员：is_founder 列、is_founder()、任命权收窄 + 种子
+db/06-doc-items.sql        文档型成果：kind/doc_html 两列 + CHECK，agent_upsert_item 升级
+db/07-funnel-interacted.sql     漏斗 interacted 口径收窄为只计 select_content（v2）
+db/08-track-event-overload.sql  收掉 track_event 旧签名重载 + 权限收敛
 ```
 
 **3. 初始管理员**
@@ -152,10 +155,16 @@ group by e.session_id
 
 ```
 .
-├── server.js              HTTP 服务与路由（单文件，约 1200 行）
+├── server.js              HTTP 服务与路由（入口：依赖注入装配，实现都在 lib/）
 ├── og-image.js            分享封面图生成（手写 PNG 编码，零原生依赖）
 ├── admin.html             后台管理页（模板，配置由服务端注入）
 ├── lib/
+│   ├── render.js          SSR 拼 HTML（列表 / 详情 / 分享面板）
+│   ├── items-store.js     内容读写与条目身份派生（ADR-0001 的深模块边界）
+│   ├── agent-api.js       /api/* 写接口
+│   ├── track.js           埋点上报与 SSR page_view
+│   ├── static-files.js    静态资源
+│   ├── http.js            sendJson / sendHtml
 │   ├── demo-cloud.js      演示模式的数据适配层
 │   └── load-env.js        极简 .env 加载器（零依赖）
 ├── assets/
@@ -170,7 +179,7 @@ group by e.session_id
 │       ├── fonts/         自托管字体（不依赖外部 CDN）
 │       └── workbuddy-cloud-sdk.global.js
 ├── .env.example           配置样例（真实 .env 不进仓库）
-├── db/                    数据库迁移（01 → 02 → 03 → 04）
+├── db/                    数据库迁移（01 → 08，均幂等）
 ├── data/
 │   └── sample-items.json  演示模式示例数据
 ├── docs/                  接口说明与埋点设计
@@ -210,7 +219,7 @@ group by e.session_id
 
 ## 埋点
 
-9 个事件，全部小写加下划线，动词在后：
+8 个事件，全部小写加下划线，动词在后：
 
 | 事件 | 触发时机 | 关键属性 |
 |---|---|---|
@@ -272,7 +281,7 @@ npm install && npm start     # 演示模式，先确认界面能跑
 
 要接上真实数据：
 
-1. 接入云服务，按顺序执行 `db/01` → `db/05`（`db/05` 末尾的初始管理员 user_id 先换成你自己的）
+1. 接入云服务，按顺序执行 `db/01` → `db/08`（`db/05` 末尾的初始管理员 user_id 先换成你自己的）
 2. 填 `.env`：`CLOUD_ENDPOINT`、`CLOUD_PUBLISHABLE_KEY`、`SITE_URL`
 3. 发布 → 得到 `https://<你的前缀>.app.workbuddy.host`
 4. **再发布一次**：把 `CLOUD_ENDPOINT` 和 `SITE_URL` 改成上一步拿到的域名
@@ -327,13 +336,13 @@ A minimal, server-rendered site for sharing research notes inside WeChat.
 
 WeChat's link-preview crawler **does not execute JavaScript**, so any client-rendered SPA shared in WeChat shows up as a bare link. This project solves that by rendering every page on the server, generating a per-item cover image at request time, and emitting absolute `og:*` URLs from an explicitly configured `SITE_URL`.
 
-Beyond that it provides an agent-facing read/write API (`X-Agent-Token`, not `Authorization: Bearer` — the edge proxy strips the latter), and a self-hosted analytics pipeline with nine events, a nested funnel, and a dashboard that talks directly to the database via RPC.
+Beyond that it provides an agent-facing read/write API (`X-Agent-Token`, not `Authorization: Bearer` — the edge proxy strips the latter), and a self-hosted analytics pipeline with eight events, a nested funnel, and a dashboard that talks directly to the database via RPC.
 
 ```bash
 git clone https://github.com/wang-junjian/research-share.git
 cd research-share && npm install && npm start
 ```
 
-Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/05`, fill in `.env`, and put your own user id in the founder seed at the end of `db/05` before running it.
+Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/08`, fill in `.env`, and put your own user id in the founder seed at the end of `db/05` before running it.
 
 Key design decisions are documented in Chinese above and in [`docs/analytics.md`](docs/analytics.md).

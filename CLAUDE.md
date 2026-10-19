@@ -22,7 +22,7 @@ npm run smoke                          # Agent API 冒烟测试（需要 token�
 
 **演示模式是刻意的静默降级**：缺 `CLOUD_ENDPOINT` / `CLOUD_PUBLISHABLE_KEY` 时页面照常 200，只是内容换成 `data/sample-items.json`。所以「接口通了」必须验数据条数，不能只信返回码——`preflight.sh` 就是为这个坑存在的。
 
-**写权限锁在数据库函数里**：`research_events` 与 `agent_tokens` 不建任何 RLS policy、已收回 anon/authenticated 全部权限，唯一写入口是 `SECURITY DEFINER` 函数（`db/02`、`db/03`）。改鉴权逻辑时鉴权点只有一个：`is_admin()` / `is_founder()`。迁移按 `db/01 → 06` 顺序执行，均幂等。
+**写权限锁在数据库函数里**：`research_events` 与 `agent_tokens` 不建任何 RLS policy、已收回 anon/authenticated 全部权限，唯一写入口是 `SECURITY DEFINER` 函数（`db/02`、`db/03`）。改鉴权逻辑时鉴权点只有一个：`is_admin()` / `is_founder()`。迁移按 `db/01 → 08` 顺序执行，均幂等。
 
 ## 容易踩的坑（线上才暴露）
 
