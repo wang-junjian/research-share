@@ -19,7 +19,79 @@ function fakeCloud(rows) {
       return resolve({ data, error: null })
     },
   }
-  return { state, database: { from: () => builder, rpc: async () => ({ data: null, error: null }) } }
+  return {
+    state,
+    database: {
+      // from() 返回同一个 builder，每次调用先清掉上一条链残留的 eq 过滤
+      from: () => {
+        builder.filters = []
+        return builder
+      },
+      // 仿真 db/06 升级后写函数的库内语义，让全栈缝测试能断言外部行为；
+      // 仿真只覆盖测试用到的三个写函数，真实 SQL 行为由 scripts/smoke.sh 对云验证
+      rpc: async (fn, args) => {
+        if (fn === 'agent_upsert_item') return { data: upsertRow(state, args), error: null }
+        if (fn === 'agent_upsert_items') {
+          let created = 0
+          let updated = 0
+          const items = []
+          for (const it of args.p_items) {
+            const r = upsertRow(state, {
+              p_title: it.title, p_summary: it.summary, p_url: it.url,
+              p_date: it.date, p_source_key: it.source_key, p_doc_html: it.doc_html,
+            })
+            if (r.action === 'created') created++; else updated++
+            items.push(r)
+          }
+          return { data: { created, updated, total: created + updated, items }, error: null }
+        }
+        if (fn === 'agent_patch_item') {
+          const row = state.rows.find((r) => r.id === args.p_id)
+          if (!row) return { data: null, error: new Error(`item_not_found: ${args.p_id}`) }
+          if (args.p_title) row.title = args.p_title
+          if (args.p_summary) row.summary = args.p_summary
+          if (args.p_url) row.url = args.p_url
+          if (args.p_date) row.item_date = args.p_date
+          row.updated_at = 'u2'
+          return { data: { action: 'updated', id: row.id }, error: null }
+        }
+        return { data: null, error: null }
+      },
+    },
+  }
+}
+
+// agent_upsert_item 语义仿真：携带 doc_html 即文档型（url 置空）；按 source_key 判
+// 存在，重投只更新标元（链接型含 url），文档型永不覆盖 doc_html（docs/adr/0004）
+function upsertRow(state, a) {
+  const isDoc = !!a.p_doc_html
+  const key = a.p_source_key || null
+  let row = key ? state.rows.find((r) => r.source_key === key) : null
+  if (!row) {
+    const id = Math.max(0, ...state.rows.map((r) => r.id)) + 1
+    row = {
+      id,
+      title: a.p_title,
+      summary: a.p_summary,
+      url: isDoc ? null : a.p_url,
+      kind: isDoc ? 'doc' : 'link',
+      doc_html: isDoc ? a.p_doc_html : null,
+      item_date: a.p_date || '2026-10-19',
+      owner_name: '军舰',
+      source_key: key,
+      source_agent: 'main-agent',
+      created_at: 'c',
+      updated_at: 'u',
+    }
+    state.rows = [...state.rows, row]
+    return { action: 'created', id }
+  }
+  row.title = a.p_title
+  row.summary = a.p_summary
+  if (a.p_date) row.item_date = a.p_date
+  if (!isDoc && row.kind !== 'doc') row.url = a.p_url
+  row.updated_at = 'u2'
+  return { action: 'updated', id: row.id }
 }
 
 const RAW = {
@@ -186,5 +258,103 @@ test('列表页 HTML 不出现文档内容（doc_html 不进列表查询的行�
     const html = await (await fetch(`${base}/`)).text()
     assert.match(html, /季度数据报告/) // 标题照常进卡片
     assert.ok(!html.includes('DOC-MARKER-报告正文'))
+  })
+})
+
+// ---- Agent API 文档型写入契约（ticket #5；全栈缝：真 handler + 真 items-store） ----
+// fake cloud 的 rpc 仿真 db/06 升级后 agent_upsert_item 的库内语义（按 source_key
+// 判存在；重投只更新标元、文档型永不覆盖 doc_html），真实 SQL 行为由 scripts/smoke.sh
+// 对真实云验证。
+
+const AGENT_TOKEN = 'test-token-1234567'
+const agentPost = (base, payload, path = '/api/items') =>
+  fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Agent-Token': AGENT_TOKEN },
+    body: JSON.stringify(payload),
+  })
+
+const SMOKE_DOC_A =
+  '<!DOCTYPE html><html><body><h1>API-DOC-MARKER-A 首版</h1><script>console.log(1)</script></body></html>'
+const SMOKE_DOC_B = '<!DOCTYPE html><html><body><h1>API-DOC-MARKER-B 覆盖版</h1></body></html>'
+
+test('POST 携带 doc_html → 201，响应 url 为派生托管地址，且该地址可读回相同文档', async () => {
+  await withServer([], async (base) => {
+    const res = await agentPost(base, {
+      title: 'API 写入的文档',
+      summary: '概览',
+      doc_html: SMOKE_DOC_A,
+      source_key: 'api-doc:1',
+    })
+    assert.equal(res.status, 201)
+    const body = await res.json()
+    assert.equal(body.action, 'created')
+    const hosted = `https://x.com/item/${body.id}/doc`
+    assert.equal(body.item.url, hosted)
+
+    const doc = await fetch(`${base}/item/${body.id}/doc`)
+    assert.equal(doc.status, 200)
+    assert.equal(doc.headers.get('content-security-policy'), 'sandbox allow-scripts')
+    assert.equal(await doc.text(), SMOKE_DOC_A)
+  })
+})
+
+test('同 source_key 重投不同 doc_html：标元更新、id 不变，托管页内容保持首次写入', async () => {
+  await withServer([], async (base) => {
+    const first = await (await agentPost(base, {
+      title: '文档标题',
+      summary: '概览',
+      doc_html: SMOKE_DOC_A,
+      source_key: 'api-doc:idem',
+    })).json()
+
+    const repost = await agentPost(base, {
+      title: '文档标题（改）',
+      summary: '概览（改）',
+      doc_html: SMOKE_DOC_B,
+      source_key: 'api-doc:idem',
+    })
+    assert.equal(repost.status, 200)
+    const again = await repost.json()
+    assert.equal(again.action, 'updated')
+    assert.equal(again.id, first.id)
+    assert.equal(again.item.title, '文档标题（改）') // 标元随重投更新
+
+    const doc = await fetch(`${base}/item/${first.id}/doc`)
+    assert.equal(await doc.text(), SMOKE_DOC_A) // 内容不可变：永不覆盖 doc_html
+
+    // PATCH 改标元同样不动文档内容
+    const patch = await fetch(`${base}/api/items/${first.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Agent-Token': AGENT_TOKEN },
+      body: JSON.stringify({ summary: 'PATCH 改的摘要' }),
+    })
+    assert.equal(patch.status, 200)
+    assert.equal(await (await fetch(`${base}/item/${first.id}/doc`)).text(), SMOKE_DOC_A)
+  })
+})
+
+test('链接型 POST 契约不变；batch 端点同样支持文档型', async () => {
+  await withServer([], async (base) => {
+    const link = await agentPost(base, { title: '链接', summary: '概览', url: 'https://a.com/x' })
+    assert.equal(link.status, 201)
+    assert.equal((await link.json()).item.url, 'https://a.com/x')
+
+    const batch = await agentPost(base, {
+      items: [
+        { title: '批内文档', summary: '概览', doc_html: SMOKE_DOC_A, source_key: 'api-doc:batch' },
+        { title: '批内链接', summary: '概览', url: 'https://a.com/y', source_key: 'api-link:batch' },
+      ],
+    }, '/api/items/batch')
+    assert.equal(batch.status, 200)
+    assert.equal((await batch.json()).created, 2)
+
+    const list = await (await fetch(`${base}/api/items`)).json()
+    const docItem = list.items.find((i) => i.source_key === 'api-doc:batch')
+    assert.equal(docItem.url, `https://x.com/item/${docItem.id}/doc`)
+    const doc = await fetch(`${base}/item/${docItem.id}/doc`)
+    assert.equal(await doc.text(), SMOKE_DOC_A)
+    const linkItem = list.items.find((i) => i.source_key === 'api-link:batch')
+    assert.equal(linkItem.url, 'https://a.com/y')
   })
 })
