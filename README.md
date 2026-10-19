@@ -226,6 +226,8 @@ group by e.session_id
 
 ### 平台托管发布（app.workbuddy.host）
 
+**发布动作由 WorkBuddy 运行时执行，没有独立 CLI。** 在 WorkBuddy 桌面应用里打开本工作区，对它的智能体说一句「发布应用」即可；在 VSCode、终端等其他环境里喊「发布」是发不出去的。
+
 **应用身份记在工作区，不在仓库里。** 工作区根的 `.workbuddy/applications.yaml` 存着 `name` + `locator`（即 appId），`~/.workbuddy/cloudstudio-deploy-history/` 里另有一份以 `sha256(目录绝对路径)[:16]` 为键的发布记录。发布时按这两处找回应用，所以：
 
 - 换目录、换机器发布会**创建一个新应用**，拿到新域名 —— 别人已经收到的旧链接会失效。
