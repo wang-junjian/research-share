@@ -1,24 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createItemsStore } from '../lib/items-store.js'
+import { fakeCloud } from './helpers/fake-cloud.js'
 
-// 最小可控 fake cloud：数据可在测试中随时替换，模拟「另一个写入者」
+// fake cloud 见 test/helpers/fake-cloud.js：rows 可随时替换，模拟「另一个写入者」
 // （admin 前端经浏览器 SDK 直连数据库，绕过本进程的缓存）
-function fakeCloud(rows) {
-  const state = { rows, queries: 0 }
-  const builder = {
-    filters: [],
-    select() { return builder },
-    order() { return builder },
-    eq(col, val) { builder.filters.push([col, val]); return builder },
-    then(resolve) {
-      state.queries++
-      const data = state.rows.filter((r) => builder.filters.every(([c, v]) => r[c] === v))
-      return resolve({ data, error: null })
-    },
-  }
-  return { state, database: { from: () => builder } }
-}
 
 const RAW = {
   id: 7,

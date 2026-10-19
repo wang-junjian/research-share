@@ -301,7 +301,8 @@
     // 文档型成果（GLOSSARY: 文档型成果）的原文不落库，url 恒为空；
     // 链接位置只读展示派生托管地址（GLOSSARY: 托管地址），表单不能创建/替换文档（第一期）。
     // admin 与站点同源，托管地址直接由 origin 拼出。
-    var isDoc = row.kind === 'doc' || !row.url
+    // 型别直接看 kind（存量行默认 'link'，url 可空仅文档型），不再用 url 启发式兜底。
+    var isDoc = row.kind === 'doc'
     var docUrl = location.origin + '/item/' + row.id + '/doc'
     var m = App.mountModal(
       '<div class="modal" style="max-width:560px">' +
