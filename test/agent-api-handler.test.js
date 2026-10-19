@@ -306,6 +306,25 @@ test('链接型契约不变：不携带 doc_html 时 url 依旧必填', async ()
   })
 })
 
+test('doc_html 为纯空白 → 按链接型处理（与 db/06 的 btrim 判定同口径）', async () => {
+  await withApi(
+    { agent_upsert_item: { data: { action: 'created', id: 7 }, error: null } },
+    async (base, cloud) => {
+      // 纯空白且无 url → 链接型判定，报 missing_field: url，而不是放行成文档型进库再被 CHECK 拒
+      const noUrl = await post(base, { title: 'T', summary: 'S', doc_html: '  \n\t ' })
+      assert.equal(noUrl.status, 400)
+      assert.equal((await noUrl.json()).error, 'missing_field')
+      assert.equal(cloud.calls.length, 0)
+
+      // 纯空白但有 url → 链接型正常落库，doc_html 置空
+      const withUrl = await post(base, { title: 'T', summary: 'S', url: 'https://a.com', doc_html: '   ' })
+      assert.equal(withUrl.status, 201)
+      assert.equal(cloud.calls[0].args.p_doc_html, null)
+      assert.equal(cloud.calls[0].args.p_url, 'https://a.com')
+    },
+  )
+})
+
 test('doc_html 超 1MB 字符 → 400 field_too_long；恰 1MB 字符放行到 rpc（请求体上限已放宽）', async () => {
   await withApi(
     { agent_upsert_item: { data: { action: 'created', id: 7 }, error: null } },

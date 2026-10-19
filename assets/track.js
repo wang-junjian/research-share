@@ -11,8 +11,8 @@
  *  5. 所有点击类事件都在这里用委托捕获，业务脚本（share.js 等）保持零改动。
  *  6. 任何异常都被吞掉：埋点永远不该弄坏页面。
  *
- * 本文件负责 8 个事件：session_start / page_view / view_item / select_content /
- * change_view_mode / outbound_click / share / error。
+ * 本文件负责 7 个事件：session_start / page_view / view_item / select_content /
+ * outbound_click / share / error。
  * 另外两个不在浏览器侧：
  *   - page_view 由服务端 SSR 再补一条（source='server'，用于算埋点覆盖率）；
  *   - content_publish 由数据库触发器在成果落库时写（event='content_publish'）。
@@ -24,7 +24,9 @@
 (function () {
   'use strict'
 
-  var VERSION = 'v1'                     // 埋点口径版本；改口径必须递增，否则跨版本趋势不可比
+  var VERSION = 'v2'                     // 埋点口径版本；改口径必须递增，否则跨版本趋势不可比
+                                         // v2：下线 change_view_mode，select_content 不再带 view_mode
+                                         // （视图切换功能已移除）；lib/track.js 的 SSR 侧版本同步递增
   var ENDPOINT = '/api/track'
   var MAX_BATCH = 10
   var FLUSH_MS = 3000
