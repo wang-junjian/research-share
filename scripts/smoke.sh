@@ -151,7 +151,9 @@ check "非法批未写入任何行" True "$(py "$TMP/r.json" "not any(i['source_
 
 echo
 echo "── 6. 文档型成果（doc_html，幂等不覆盖）──"
-DOC_A='<!DOCTYPE html><html><body><h1>SMOKE-DOC-MARKER-A 首版</h1><script>console.log(1)</script></body></html>'
+# 载荷刻意不含 <script> 与内联事件属性：平台边缘 WAF 会 403 掉这类请求体（请求连应用都到不了，
+# 见 docs/agent-api.md「含脚本的文档会被平台边缘防护拦下」），那不是本段要验证的契约。
+DOC_A='<!DOCTYPE html><html><body><h1>SMOKE-DOC-MARKER-A 首版</h1><p style="color:#333">静态文档</p></body></html>'
 DOC_B='<!DOCTYPE html><html><body><h1>SMOKE-DOC-MARKER-B 覆盖版</h1></body></html>'
 mkdoc() { python3 -c "import json,sys;print(json.dumps({'title':'冒烟文档','summary':'由 smoke.sh 写入，结尾会删掉。','doc_html':sys.argv[1],'source_key':'$KEY:doc'}))" "$1"; }
 

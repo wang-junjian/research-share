@@ -71,6 +71,12 @@ curl -s -X POST $BASE/api/items \
 
 `PATCH` 只接受 `title` / `summary` / `url` / `date`；`id` 从路径取。**只要携带 `doc_html` 键（任意值，含空串 / null）即 `400 immutable_field`**——文档内容一经发布不可修改（`docs/adr/0004`），想换内容请删除后重新发布。文档型成果的 `url` 不落库（派生托管地址），PATCH 对它传 `url` 同样会被数据库约束拒绝。
 
+> **含脚本的文档会被平台边缘防护拦下。** 请求体里出现 `<script` 或内联事件属性（如 `onclick=`）时，
+> 网关的 WAF 会直接返回 **403 的 HTML 拦截页**（不是本接口的 JSON），请求根本到不了应用——
+> 浏览器直写数据面与 Agent API 两条通道同此限制，应用侧无法用错误码表达它。
+> 所以 `doc_html` 只收不含脚本的静态 HTML；需要图表这类交互时，请在发布前把脚本渲染成静态
+> SVG / 图片再内联。
+
 ### 返回
 
 `POST` / `PATCH` / `GET` 单条都返回完整条目对象：
