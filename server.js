@@ -97,7 +97,15 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         if (!it) {
           return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
         }
-        const html = renderDetail(site, it)
+        // 相邻条目导航：列表按日期倒序，「上一条」= 排在前面（更新），
+        // 「下一条」= 排在后面（更早）。find 内部已查过列表（60s 缓存），
+        // 这里重取同一份缓存，不添新查询。
+        const items = await itemsStore.list()
+        const idx = items.findIndex((x) => x.id === it.id)
+        const html = renderDetail(site, it, {
+          prev: idx > 0 ? items[idx - 1] : null,
+          next: idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null,
+        })
         trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}` })
         return sendHtml(res, 200, html)
       }

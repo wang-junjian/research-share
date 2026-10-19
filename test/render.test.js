@@ -88,6 +88,41 @@ test('renderDetail 文档型与链接型同构：无 iframe、无「全屏阅读
   assert.match(html, /<a class="btn btn-primary" href="https:\/\/example\.com\/item\/7\/doc" rel="noopener">查看原文 ↗<\/a>/)
 })
 
+// 相邻条目导航：prev = 更新的一篇，next = 更早的一篇（路由按列表序注入）
+const sibPrev = { ...item, id: 8, no: 'NO.008', title: '更新的一篇', date: '2026-10-18' }
+const sibNext = { ...item, id: 6, no: 'NO.006', title: '更早的一篇', date: '2026-10-10' }
+
+test('renderDetail 相邻导航：两侧页签指向相邻条目，窄屏横排签同在', () => {
+  const html = renderDetail(site, item, { prev: sibPrev, next: sibNext })
+  assert.match(html, /<div class="summary-zone">/)
+  assert.match(html, /<a class="sibnav sibnav-prev" href="\/item\/8">/)
+  assert.match(html, /<a class="sibnav sibnav-next" href="\/item\/6">/)
+  assert.match(html, /上一条 · 更新/)
+  assert.match(html, /下一条 · 更早/)
+  assert.match(html, /更新的一篇/)
+  assert.match(html, /更早的一篇/)
+  assert.match(html, /<div class="sibnav-mini">/)
+})
+
+test('renderDetail 相邻导航到头：缺省侧不渲染页签，横排签留「没有了」', () => {
+  const html = renderDetail(site, item, { prev: null, next: sibNext })
+  assert.ok(!html.includes('sibnav sibnav-prev'))
+  assert.match(html, /<a class="sibnav sibnav-next" href="\/item\/6">/)
+  assert.match(html, /← 上一条 · 没有了/)
+})
+
+test('renderDetail 两侧都到头（仅一条内容）：与无导航输出同构', () => {
+  const html = renderDetail(site, item, { prev: null, next: null })
+  assert.ok(!html.includes('summary-zone'))
+  assert.ok(!html.includes('sibnav'))
+})
+
+test('renderDetail 相邻导航转义相邻条目标题中的 HTML', () => {
+  const html = renderDetail(site, item, { prev: { ...sibPrev, title: '<img onerror=x>' }, next: null })
+  assert.match(html, /&lt;img onerror=x&gt;/)
+})
+
+
 test('renderDetail 顶栏含「分享」快速录入挂载点（与首页同一入口）', () => {
   const html = renderDetail(site, item)
   assert.match(html, /<button class="topbar-link topbar-share" type="button" data-share-entry hidden>/)
