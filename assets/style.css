@@ -612,6 +612,75 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
   float: left; padding: 6px 12px 0 0;
   color: var(--pub-accent);
 }
+
+/* ---------------- 相邻条目导航 ----------------
+ * 概览两侧的墨色箭头页签，悬停/聚焦滑出邻居标题卡（瞬时预览）。
+ * 页签钉在栏缘不动：.sibnav 以贴近栏缘的一侧锚定，页签即锚定侧的
+ * 第一个元素，卡片只在页签外侧（页缘方向）生长 —— 上一条的卡在页签
+ * 左边，下一条的卡在页签右边。到头的一侧不渲染页签。
+ * 窄屏页缘没有页签的容身之处，退化为概览下方的横排签（.sibnav-mini）。
+ */
+.summary-zone { position: relative; }
+.sibnav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center;
+  text-decoration: none;
+}
+/* row-reverse：DOM 顺序是 [箭头, 卡]，视觉反转为 [卡, 箭头]，
+ * 箭头压在容器右缘（锚定缘），卡片向左生长 */
+.sibnav-prev { right: calc(100% + 16px); flex-direction: row-reverse; }
+/* 默认 row：箭头压在容器左缘（锚定缘），卡片向右生长 */
+.sibnav-next { left: calc(100% + 16px); }
+.sibnav-arrow {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 56px; border-radius: 8px;
+  background: var(--ink); color: #f4f2ec; font-size: 18px;
+}
+.sibnav:hover .sibnav-arrow, .sibnav:focus-visible .sibnav-arrow { background: var(--pub-accent); }
+/* 收起时 max-width 0 + 透明边框 + 无投影：页签之间不留任何残影 */
+.sibnav-card {
+  display: block; max-width: 0; overflow: hidden; opacity: 0;
+  padding: 10px 0; box-sizing: border-box;
+  background: #fff; border: 1px solid transparent; border-radius: 6px;
+  transition: max-width .28s ease, opacity .28s ease, padding .28s ease, border-color .28s ease;
+}
+.sibnav-prev .sibnav-card { margin-right: 8px; }
+.sibnav-next .sibnav-card { margin-left: 8px; }
+.sibnav:hover .sibnav-card, .sibnav:focus-visible .sibnav-card {
+  max-width: 250px; opacity: 1; padding: 10px 14px;
+  border-color: var(--paper-line);
+  box-shadow: 0 8px 24px rgba(24, 33, 66, .14);
+}
+.sibnav-kick, .sibnav-title, .sibnav-meta { display: block; width: 218px; box-sizing: border-box; }
+.sibnav-kick { font-size: 11px; letter-spacing: .22em; color: #8d8fa0; }
+.sibnav-title {
+  margin: 5px 0; font-family: var(--font-display); font-size: 15px;
+  line-height: 1.5; color: var(--ink);
+}
+.sibnav-meta { font-family: var(--mono); font-size: 11px; color: #8d8fa0; }
+
+/* 卡片向页缘外侧生长，余量 = 120px 页内边距 + 视口超出 980px 部分的一半：
+ *   ≥1400px 全宽卡（250px，需 314px 余量）；1221–1399px 收窄卡（172px，
+ *   需 236px）；≤1220px 页缘连收窄卡都放不下，退化为概览下方的横排签。
+ */
+@media (max-width: 1400px) {
+  .sibnav:hover .sibnav-card, .sibnav:focus-visible .sibnav-card { max-width: 172px; }
+  .sibnav-kick, .sibnav-title, .sibnav-meta { width: 142px; }
+}
+
+.sibnav-mini { display: none; }
+@media (max-width: 1220px) {
+  .sibnav { display: none; }
+  .sibnav-mini { display: flex; gap: 10px; margin-top: 20px; }
+  .sibnav-mini a, .sibnav-mini-none {
+    flex: 1; min-width: 0; padding: 10px 12px; box-sizing: border-box;
+    border: 1px solid var(--paper-line); background: #faf8f2;
+    font-size: 13px; color: var(--ink-2); text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sibnav-mini a:last-child, .sibnav-mini-none:last-child { text-align: right; }
+  .sibnav-mini a:hover { border-color: var(--pub-accent); color: var(--pub-accent); }
+}
 .detail-foot { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 32px 0 6px; }
 .detail-src {
   margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--paper-line);
