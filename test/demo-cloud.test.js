@@ -61,15 +61,15 @@ test('演示模式：文档型样例在列表可见，标题照常进卡片', as
   })
 })
 
-test('演示模式：详情页内嵌文档（sandbox iframe 指向托管地址），文档内容不内联', async () => {
+test('演示模式：详情页不内嵌文档（无 iframe），「查看原文」指向托管地址', async () => {
   const doc = await loadDocSample()
   await withDemoServer(async (base) => {
     const res = await fetch(`${base}/item/${doc.id}`)
     assert.equal(res.status, 200)
     const html = await res.text()
-    assert.match(html, /<iframe[^>]*sandbox="allow-scripts"/)
-    assert.match(html, new RegExp(`<iframe[^>]*src="https://demo\\.example\\.com/item/${doc.id}/doc"`))
-    assert.match(html, /全屏阅读/)
+    assert.ok(!html.includes('<iframe'))
+    assert.doesNotMatch(html, /全屏阅读/)
+    assert.match(html, new RegExp(`<a class="btn btn-primary" href="https://demo\\.example\\.com/item/${doc.id}/doc" rel="noopener">查看原文 ↗</a>`))
   })
 })
 

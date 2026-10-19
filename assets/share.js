@@ -1,10 +1,11 @@
 /* ============================================================
  * 研究成果 · 分享交互
- * 1) 复制本页链接  —— clipboard API + execCommand 回退（微信 webview 可用）
- * 2) 复制文字+原文链接 —— 纯文本三段：标题 / 概览 / 原文链接
- * 3) 显示海报图    —— Canvas 绘制后弹层预览，可长按保存 / 下载 PNG
- * 4) 复制海报图    —— 把 PNG 写进系统剪贴板，粘贴即得图
+ * 1) 复制海报图    —— 把 PNG 写进系统剪贴板，粘贴即得图
+ * 2) 显示海报图    —— Canvas 绘制后弹层预览，可长按保存 / 下载 PNG
+ * 3) 复制原文链接  —— clipboard API + execCommand 回退（微信 webview 可用）
+ * 4) 复制本页链接  —— 同上，复制的是站内详情页地址
  * 5) 复制海报图+原文链接 —— 同一次 write 里带 image/png 与 text/plain 两种风味
+ * 6) 复制文字+原文链接 —— 纯文本三段：标题 / 概览 / 原文链接
  *
  * 海报上的数据来自详情页 .sharebar 的 data-* 属性，不额外请求接口。
  * 零依赖、无外链。
@@ -95,10 +96,16 @@
     return Promise.resolve(legacyCopy(text))
   }
 
+  // 原文链接的单点口径：优先原文地址（data-src），缺失时退回本页链接，
+  // 绝不复制出空串。composeText 与「复制原文链接」共用，别各写一份
+  function srcLink() {
+    return data.src || data.url
+  }
+
   // 「文字 + 原文链接」的正文：标题 / 概览 / 原文链接，三段各占一行。
   // 「复制海报图 + 原文链接」也复用这段文字 —— 图片写不进去时它就是唯一的载体。
   function composeText() {
-    var src = data.src || data.url
+    var src = srcLink()
     var label = data.src ? '原文链接' : '本页链接'
     var lines = []
     if (data.title) lines.push(data.title)
@@ -126,6 +133,19 @@
         resetNoteSoon()
       } else {
         setNote('这个环境不让自动复制，请长按选中：' + data.url, 'error')
+      }
+    })
+  }
+
+  // 「复制原文链接」：原始出处地址，口径见 srcLink()
+  function copySrcLink() {
+    var src = srcLink()
+    copyText(src).then(function (ok) {
+      if (ok) {
+        setNote('原文链接已复制，去微信里粘贴发送即可', 'ok')
+        resetNoteSoon()
+      } else {
+        setNote('这个环境不让自动复制，请长按选中：' + src, 'error')
       }
     })
   }
@@ -462,6 +482,7 @@
     if (!btn || btn.disabled) return
     var act = btn.getAttribute('data-act')
     if (act === 'copy-link') copyLink()
+    else if (act === 'copy-src') copySrcLink()
     else if (act === 'copy-text') copyShareText()
     else if (act === 'show-poster') showPoster()
     else if (act === 'copy-poster') copyPoster(false)

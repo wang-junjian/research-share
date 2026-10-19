@@ -81,9 +81,25 @@ test('renderDetail 转义标题中的 HTML', () => {
   assert.doesNotMatch(html, /<h1 class="detail-title"><img/)
 })
 
+test('renderDetail 文档型与链接型同构：无 iframe、无「全屏阅读」，主按钮为「查看原文 ↗」', () => {
+  const html = renderDetail(site, { ...item, kind: 'doc', url: 'https://example.com/item/7/doc' })
+  assert.ok(!html.includes('<iframe'))
+  assert.doesNotMatch(html, /全屏阅读/)
+  assert.match(html, /<a class="btn btn-primary" href="https:\/\/example\.com\/item\/7\/doc" rel="noopener">查看原文 ↗<\/a>/)
+})
+
 test('renderDetail 顶栏含「分享」快速录入挂载点（与首页同一入口）', () => {
   const html = renderDetail(site, item)
   assert.match(html, /<button class="topbar-link topbar-share" type="button" data-share-entry hidden>/)
+})
+
+test('renderDetail 分享面板六个动作按既定顺序（含「复制原文链接」）', () => {
+  const html = renderDetail(site, item)
+  const acts = [...html.matchAll(/data-act="([^"]+)"/g)].map((m) => m[1])
+  assert.deepEqual(acts, ['copy-poster', 'show-poster', 'copy-src', 'copy-link', 'copy-poster-link', 'copy-text'])
+  assert.match(html, /复制原文链接/)
+  // 「复制原文链接」的数据源：原文地址挂在 data-src 上
+  assert.match(html, /data-src="https:\/\/src\.example\.com\/a"/)
 })
 
 test('renderDetail 有 publicConfigJson 时加载 quick-share.js', () => {

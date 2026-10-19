@@ -620,15 +620,6 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 }
 .detail-src a { color: var(--ink-2); }
 
-/* 详情页·文档型成果：内嵌托管文档（CSP sandbox 隔离，见 docs/adr/0004）。
-   80vh 是折中：长文档在页内可滚动读完，又不至于把标元区挤没。 */
-.detail-doc { margin-top: 8px; }
-.detail-doc-frame {
-  display: block; width: 100%; height: 80vh;
-  border: 1px solid var(--paper-line); border-radius: 3px;
-  background: #fff;
-}
-
 /* ---------------- 分享面板：报纸边栏 ---------------- */
 .sharebar {
   border-top: 1px solid var(--ink);

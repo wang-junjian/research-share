@@ -22,3 +22,9 @@
 对原决策的影响：**「不做消毒、JS 照跑、图表可交互」的写入前提在 API 通道上不成立**——含脚本的文档根本入不了库，实际写入的 `doc_html` 均为无脚本静态 HTML。「＋ 分享」模态据此在提交前前置拦截并说明原因（`assets/quick-share.js` 的 `DOC_BLOCKED`），Agent API 文档同步标注（`docs/agent-api.md`）；图表等交互内容需在发布前渲染成静态 SVG / 图片再内联。
 
 隔离方案保留不变：CSP sandbox + iframe sandbox 双保险仍覆盖三条残留路径——WAF 规则变动放行、SQL 控制台等绕过 API 的写入通道、以及存量内容；威胁模型与文档不可变约束亦不变。
+
+## 修订二（2026-10-19）：详情页不再内嵌 iframe，隔离收口为 CSP sandbox 单保险
+
+详情页形态的 product 决策变化：文档型详情页不再内嵌整份文档（iframe 移除），按钮组与链接型完全一致——「查看原文 ↗」直达托管地址。读者与文档的接触面因此只剩托管路由本身，iframe 那道「双保险」随之不复存在，**隔离由托管路由的 `Content-Security-Policy: sandbox allow-scripts` 响应头独力承担**。
+
+这没有削弱实际防护：iframe sandbox 本就只是冗余层（读者新标签直达托管地址时它从不生效，见原决策对「仅靠 iframe sandbox」的拒绝理由），CSP sandbox 随响应头走、顶层打开同样生效，三条残留路径（WAF 规则变动放行、绕过 API 的写入通道、存量内容）依旧被它覆盖。威胁模型与文档不可变约束不变。
