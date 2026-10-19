@@ -8,7 +8,8 @@
  * 流程（设计结论见分支 proto/quick-share-entry 的原型，A2 模式）：
  *   模态录入（标题/概览/日期，加「链接 / 文档」类型切换：
  *     链接型填站外原文链接；文档型拖入/选择 .html 文件或粘贴 HTML 源码，
- *     两个入口汇入同一份 HTML 文本，提交前预检「非空且 ≤ 1MB 字符」）
+ *     两个入口汇入同一份 HTML 文本，提交前预检「非空、≤ 1MB 字符、不含脚本」——
+ *     含 <script>/内联事件属性的文档会被平台边缘 WAF 直接 403，见下方 DOC_BLOCKED）
  *   → 浏览器 SDK 直写 research_items（与 admin 同一条写入路径，绕过本进程；
  *     文档型带 kind:'doc' + doc_html、url 留空，由 db/06 的 CHECK 兜底；
  *     首页列表的 60s 缓存不受影响——成功态直接带用户去详情页，
@@ -25,6 +26,23 @@
 
   // 与 db/06 的 CHECK 同口径：1MB 按字符数计（char_length）
   var DOC_MAX_CHARS = 1000000
+
+  // 平台边缘 WAF 的 XSS 规则会直接 403 掉含脚本的请求体（返回一张 HTML 拦截页，
+  // 不是 JSON），请求根本到不了应用 —— 浏览器直写数据面与 Agent API 两条写入通道
+  // 同此限制。所以文档型只收静态 HTML：在这里前置拦下并说清原因，
+  // 而不是让人撞上一个看不懂的 403 页面。
+  var DOC_BLOCKED = [
+    { re: /<\s*script[\s>]/i, what: '<script> 标签' },
+    { re: /\son[a-z]{3,}\s*=/i, what: '内联事件属性（如 onclick=）' },
+    { re: /javascript\s*:/i, what: 'javascript: 链接' }
+  ]
+
+  function blockedInDoc(html) {
+    for (var i = 0; i < DOC_BLOCKED.length; i++) {
+      if (DOC_BLOCKED[i].re.test(html)) return DOC_BLOCKED[i].what
+    }
+    return ''
+  }
 
   var entry = document.querySelector('[data-share-entry]')
   if (!entry) return
@@ -59,7 +77,7 @@
       '        <input data-qs="file" type="file" accept=".html,.htm,text/html" hidden>' +
       '        <span>拖入 .html 文件到这里，或点击选择文件</span>' +
       '      </div>' +
-      '      <div class="modal-field"><textarea data-qs="source" class="qs-source" placeholder="或直接粘贴 HTML 源码（自包含文档：CSS/JS 全部内联）" spellcheck="false"></textarea></div>' +
+      '      <div class="modal-field"><textarea data-qs="source" class="qs-source" placeholder="或直接粘贴 HTML 源码（自包含文档：样式与内容全部内联，不含脚本）" spellcheck="false"></textarea></div>' +
       '      <span class="qs-count" data-qs="count">0 / 1,000,000 字符</span>' +
       '    </div>' +
       '    <div class="modal-field qs-date"><input data-qs="date" type="date" title="成果日期，默认今天"></div>' +
@@ -163,6 +181,11 @@
         if (!docHtml.trim()) { fail('文档为空：请拖入 .html 文件或粘贴 HTML 源码'); return }
         if (docHtml.length > DOC_MAX_CHARS) {
           fail('文档超过 1MB 上限（' + docHtml.length.toLocaleString() + ' 字符），请压缩或拆分后分享')
+          return
+        }
+        var blocked = blockedInDoc(docHtml)
+        if (blocked) {
+          fail('文档含' + blocked + '：平台边缘防护会直接拦下这类提交（403），请改成不含脚本的静态 HTML 再分享')
           return
         }
         payload.kind = 'doc'
