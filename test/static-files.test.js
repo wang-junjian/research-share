@@ -36,7 +36,7 @@ async function fixture() {
   await writeFile(path.join(assetsDir, 'vendor', 'fonts', 'x.woff2'), 'font-bytes')
   await writeFile(path.join(assetsDir, 'logo.unknownext'), '???')
   const adminTemplate = path.join(root, 'admin.html')
-  await writeFile(adminTemplate, '<script>window.cfg=__PUBLIC_CONFIG__</script>')
+  await writeFile(adminTemplate, '<script>window.cfg=__PUBLIC_CONFIG__</script><link rel="icon" href="__FAVICON__">')
   return { assetsDir, adminTemplate }
 }
 
@@ -87,15 +87,16 @@ test('文件不存在：返回 false，由路由层决定怎么 404', async () =
   assert.equal(res.status, null)
 })
 
-test('getAdminHtml：替换 __PUBLIC_CONFIG__ 占位符并缓存（只读一次盘）', async () => {
+test('getAdminHtml：替换 __PUBLIC_CONFIG__ / __FAVICON__ 占位符并缓存（只读一次盘）', async () => {
   const { assetsDir, adminTemplate } = await fixture()
   const { getAdminHtml } = createStaticFiles({
     assetsDir,
     adminTemplate,
     publicConfigJson: '{"endpoint":"https://e.com"}',
+    favicon: 'data:image/svg+xml,fav',
   })
   const html = await getAdminHtml()
-  assert.equal(html, '<script>window.cfg={"endpoint":"https://e.com"}</script>')
+  assert.equal(html, '<script>window.cfg={"endpoint":"https://e.com"}</script><link rel="icon" href="data:image/svg+xml,fav">')
   // 缓存：删掉模板文件后再取，仍返回第一次的结果
   await writeFile(adminTemplate, 'changed')
   assert.equal(await getAdminHtml(), html)
