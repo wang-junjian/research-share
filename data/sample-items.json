@@ -2,6 +2,14 @@
   "_comment": "演示模式的示例数据。全部为虚构条目，仅用于让界面有内容可渲染；换成你自己的数据后请删除本文件或改名。",
   "items": [
     {
+      "id": 9,
+      "title": "文档型成果：没有 URL 的本地文档也能分享",
+      "summary": "这条成果没有站外原文链接——正文就是一份自包含的 HTML 文档，由本站托管。打开详情页可以直接滚动阅读全文，也可以经托管地址整屏打开；文档里的脚本被 CSP sandbox 隔离在孤立源中，能运行但摸不到访客的登录会话。录入方式是在「＋ 分享」模态里上传 .html 文件或粘贴 HTML 源码。",
+      "date": "2026-09-30",
+      "kind": "doc",
+      "doc_html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>文档型成果 · 演示样例</title>\n<style>\n  body { margin: 0; padding: 2rem 1rem; background: #faf9f7; color: #2b2b2b; font-family: -apple-system, \"PingFang SC\", \"Songti SC\", serif; line-height: 1.8; }\n  article { max-width: 40rem; margin: 0 auto; }\n  h1 { font-size: 1.5rem; }\n  .meta { color: #8a8577; font-size: .85rem; }\n  .bar { display: flex; align-items: flex-end; gap: .5rem; height: 6rem; margin: 1.5rem 0; }\n  .bar i { flex: 1; background: #c62b38; opacity: .75; border-radius: 3px 3px 0 0; }\n  footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e3ded2; color: #8a8577; font-size: .8rem; }\n</style>\n</head>\n<body>\n<article>\n  <h1>文档型成果 · 演示样例</h1>\n  <p class=\"meta\">演示模式内置样例 · 无外部资源 · 全文由本站托管</p>\n  <p>链接型成果分享的是一个站外地址，而文档型成果分享的是文档本身：一整份自包含的 HTML 直接存进数据库，由站点在托管地址上原样发回。转发这个地址，对方打开即是完整文档。</p>\n  <p>下面这张纯 CSS 柱状图和一个内联脚本说明文档可以携带样式与交互；脚本运行在 CSP sandbox 的孤立源里，能执行，但读不到站点会话。</p>\n  <div class=\"bar\" aria-hidden=\"true\"><i style=\"height:35%\"></i><i style=\"height:60%\"></i><i style=\"height:45%\"></i><i style=\"height:80%\"></i><i style=\"height:100%\"></i><i style=\"height:70%\"></i></div>\n  <p>本页共 <strong id=\"paraCount\">?</strong> 个段落（由内联脚本现场统计）。</p>\n  <footer>这段页脚也属于文档内容。标元（标题、概览、日期）在详情页文档之外展示，内容一经发布不可改写。</footer>\n</article>\n<script>document.getElementById('paraCount').textContent = document.querySelectorAll('p').length</script>\n</body>\n</html>"
+    },
+    {
       "id": 1,
       "title": "微信内分享卡片的三个必备标签",
       "summary": "微信抓取链接预览时只看 og:title、og:description、og:image 三个标签，而它不会执行页面里的 JavaScript。这就是为什么单页应用在微信里分享出去只有一条光秃秃的链接：抓取发生时，页面还是空壳。解法是把这三个标签放到服务端渲染的 HTML 里，并且 og:image 必须是绝对 URL。",
