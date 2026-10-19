@@ -5,6 +5,8 @@ import { drawCover } from './og-image.js'
 import { createDemoCloud } from './lib/demo-cloud.js'
 import { loadEnv } from './lib/load-env.js'
 import { renderList, renderDetail, renderError } from './lib/render.js'
+// 【原型 PROTOTYPE】快速录入入口变体；protoEnabled 门控，production 不注入
+import { renderQuickEntryProto } from './lib/proto-quick-entry.js'
 import { createTrack } from './lib/track.js'
 import { createAgentApi } from './lib/agent-api.js'
 import { createItemsStore } from './lib/items-store.js'
@@ -16,7 +18,7 @@ import { sendJson, sendHtml, CORS_HEADERS } from './lib/http.js'
 // 测试（test/server.test.js）与真实入口共用这一个 handler —— 同一条 seam。
 // ---------------------------------------------------------------------------
 
-export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }) {
+export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic, protoEnabled = false }) {
   return async function handler(req, res) {
     const rawUrl = req.url || '/'
     let reqUrl
@@ -40,7 +42,11 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       }
       if (path === '/' || path === '/index.html') {
         const items = await itemsStore.list()
-        const html = renderList(site, items)
+        // 【原型】快速录入入口变体：仅非 production 注入，?variant=A1|A2 切换
+        const protoHtml = protoEnabled
+          ? renderQuickEntryProto(reqUrl.searchParams.get('variant'), { latestUrl: items[0] ? `/item/${items[0].id}` : '/' })
+          : ''
+        const html = renderList(site, items, protoHtml)
         // 先发埋点请求（RPC 立刻发出），再写响应 —— 两者重叠，不给用户加延迟
         trackServerPageView(req, { page: '/' })
         return sendHtml(res, 200, html)
@@ -181,7 +187,10 @@ async function main() {
   const { handleApi } = createAgentApi({ cloud, site, itemsStore })
 
   const server = http.createServer(
-    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }),
+    createHandler({
+      site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic,
+      protoEnabled: process.env.NODE_ENV !== 'production',
+    }),
   )
 
   server.listen(PORT, '0.0.0.0', () => {
