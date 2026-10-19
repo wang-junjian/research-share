@@ -210,17 +210,15 @@ test('埋点口径：托管地址不产生 page_view，详情页恰为一次', a
   }, { trackServerPageView: () => { pageViews++ } })
 })
 
-test('详情页·文档型：sandbox iframe 指向托管地址，含全屏入口，文档内容不内联', async () => {
+test('详情页·文档型：不内嵌文档（无 iframe），按钮与链接型一致指向托管地址', async () => {
   await withServer([RAW_DOC], async (base) => {
     const res = await fetch(`${base}/item/9`)
     assert.equal(res.status, 200)
     const html = await res.text()
-    assert.match(html, /<iframe[^>]*sandbox="allow-scripts"/)
-    assert.match(html, /<iframe[^>]*src="https:\/\/x\.com\/item\/9\/doc"/)
-    assert.match(html, /全屏阅读/)
-    assert.match(html, /href="https:\/\/x\.com\/item\/9\/doc"/)
-    // 「查看原文」按钮与链接型同一 detail-foot 位置，指向物化后的托管地址
-    assert.match(html, /<a[^>]*href="https:\/\/x\.com\/item\/9\/doc"[^>]*>查看原文<\/a>/)
+    assert.ok(!html.includes('<iframe'))
+    assert.doesNotMatch(html, /全屏阅读/)
+    // 「查看原文」与链接型同一按钮同一位置，指向物化后的托管地址
+    assert.match(html, /<a class="btn btn-primary" href="https:\/\/x\.com\/item\/9\/doc" rel="noopener">查看原文 ↗<\/a>/)
     assert.ok(!html.includes('DOC-MARKER-报告正文'))
     // 标元区不变
     assert.match(html, /季度数据报告/)
