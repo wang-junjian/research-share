@@ -778,6 +778,22 @@ input[type="checkbox"].cbx {
 .modal-close { margin-left: auto; }
 .danger-text { color: var(--danger); font-size: 13.5px; line-height: 1.62; margin: 0; }
 
+/* ---------------- 首页快速分享（assets/quick-share.js） ---------------- */
+/* 顶栏入口：复用 .topbar-link，按钮元素需要补字体继承与手型 */
+.topbar-share { cursor: pointer; font: inherit; margin-right: 8px; }
+body.page-pub .topbar-share b { color: var(--pub-accent); font-weight: 600; }
+/* 录入模态：链接 + 日期并排；提示语占住左侧把按钮推到右边 */
+.qs-row { display: grid; grid-template-columns: 1fr 150px; gap: 10px; }
+.qs-hint { flex: 1; align-self: center; font-size: 12px; color: var(--text-2); }
+.qs-hint.is-error { color: var(--danger); }
+/* 成功态（A2：直达详情页分享） */
+.qs-done { display: flex; flex-direction: column; gap: 6px; }
+.qs-done-no { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; color: var(--pub-accent, var(--accent)); }
+.qs-done-title { font-family: var(--font-display); font-size: 20px; line-height: 1.4; word-break: break-word; }
+.qs-done-url { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+.qs-done-hint { margin: 8px 0 0; font-size: 12.5px; color: var(--text-2); line-height: 1.6; }
+@media (max-width: 560px) { .qs-row { grid-template-columns: 1fr; } }
+
 /* ---------------- Toast ---------------- */
 .toast {
   position: fixed; left: 50%; bottom: 32px; transform: translate(-50%, 20px);
