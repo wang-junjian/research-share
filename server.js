@@ -5,6 +5,8 @@ import { drawCover } from './og-image.js'
 import { createDemoCloud } from './lib/demo-cloud.js'
 import { loadEnv } from './lib/load-env.js'
 import { renderList, renderDetail, renderError } from './lib/render.js'
+// PROTOTYPE（lib/render-proto.js）：详情页上/下一条导航候选设计，定稿后删除
+import { renderDetailProto } from './lib/render-proto.js'
 import { createTrack } from './lib/track.js'
 import { createAgentApi } from './lib/agent-api.js'
 import { createItemsStore } from './lib/items-store.js'
@@ -96,6 +98,20 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         const it = await itemsStore.find(Number(m[1]))
         if (!it) {
           return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
+        }
+        // PROTOTYPE：?variant=A|B|C 渲染详情页上/下一条导航的候选设计
+        // （lib/render-proto.js），定稿后连同这个分支一起拆除。
+        const pv = (reqUrl.searchParams.get('variant') || '').toUpperCase()
+        if (pv && process.env.NODE_ENV !== 'production' && ['A', 'B', 'C'].includes(pv)) {
+          const items = await itemsStore.list()
+          const idx = items.findIndex((x) => x.id === it.id)
+          const html = renderDetailProto(site, it, {
+            variant: pv,
+            prev: idx > 0 ? items[idx - 1] : null,
+            next: idx >= 0 && idx < items.length - 1 ? items[idx + 1] : null,
+          })
+          trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}` })
+          return sendHtml(res, 200, html)
         }
         const html = renderDetail(site, it)
         trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}` })
