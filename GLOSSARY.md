@@ -9,7 +9,7 @@
 - **文档型成果（Document Item）**：正文为一份自包含 HTML 文档（CSS/JS 全部内联、无外部本地资源），上传到本站托管；托管后生成的站内地址即该成果的原文链接。隔离决策记录见 [ADR-0004](docs/adr/0004-hosted-html-csp-sandbox.md)。
 - **成果编号（Item No）**：由数据库主键派生的展示编号，形如 `NO.007`，稳定不随排序变化，像笔记的索引号。
 - **条目公共身份**：一条成果的编号、页面 URL（`/item/:id`）与 OG 封面 URL（`/og/:id.png`）三个派生量，由条目存储单点派生，调用方只读字段不自行推导。文档型成果另有**托管地址**（`/item/:id/doc`）派生，其原文链接即托管地址、不落库。
-- **条目存储（Items Store）**：数据访问与身份派生的深模块（`lib/items-store.js`）。`createItemsStore({ cloud, siteUrl })` 返回 `{ list, find, invalidate }`；60s 缓存、select 列清单、排序、「miss → invalidate → 重查一次」策略、以及日期归一化（`item_date` → `YYYY-MM-DD`）全部收在 interface 后面。`list`/`find` 返回的 item 物化携带派生字段：`no`（NO.007）、`no_num`（编号的数字部分 `007`，供分享海报与文件名）、`date`、`page_url`、`og_image`。决策记录见 [ADR-0001](docs/adr/0001-items-store.md)。
+- **条目存储（Items Store）**：数据访问与身份派生的深模块（`lib/items-store.js`）。`createItemsStore({ cloud, siteUrl })` 返回 `{ list, find, findDocument, invalidate }`；60s 缓存、select 列清单、排序、「miss → invalidate → 重查一次」策略、以及日期归一化（`item_date` → `YYYY-MM-DD`）全部收在 interface 后面。`list`/`find` 返回的 item 物化携带派生字段：`no`（NO.007）、`no_num`（编号的数字部分 `007`，供分享海报与文件名）、`date`、`page_url`、`og_image`、`doc_url`（文档型成果的托管地址，与上述字段同点派生；物化后其 `url` 字段即该地址）。`findDocument` 单行另取文档原文（`doc_html` 不进列表查询）。决策记录见 [ADR-0001](docs/adr/0001-items-store.md)。
 
 ## 站点形态
 

@@ -360,6 +360,21 @@ test('batch 支持文档型：doc_html 透传且 url 置空；批内文档型与
   )
 })
 
+test('PATCH 只要携带 doc_html 键即拒：空串与 null 同样 → 400 immutable_field，rpc 未被调用', async () => {
+  await withApi({}, async (base, cloud) => {
+    for (const payload of [{ doc_html: '' }, { doc_html: null }]) {
+      const res = await fetch(`${base}/api/items/7`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify(payload),
+      })
+      assert.equal(res.status, 400)
+      assert.equal((await res.json()).error, 'immutable_field')
+    }
+    assert.equal(cloud.calls.length, 0)
+  })
+})
+
 test('PATCH 携带 doc_html → 400（文档内容不可变），rpc 未被调用；改标元不受影响', async () => {
   await withApi({ agent_patch_item: { data: null, error: null } }, async (base, cloud) => {
     const res = await fetch(`${base}/api/items/7`, {
