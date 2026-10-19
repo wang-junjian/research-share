@@ -65,6 +65,18 @@
     return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
   }
 
+  /* ---------- 3. 条目公共身份（GLOSSARY: 条目公共身份，ADR-0001） ----------
+   * 服务端由条目存储（lib/items-store.js）物化派生字段；浏览器侧经 SDK
+   * 直连数据面、结构上拿不到物化字段，编号 / 详情页路径 / 托管地址 /
+   * 型别判定收在这里，admin / quick-share / analytics 只调用不推导。
+   * itemPath/docPath 返回站内路径：需要完整地址的展示处自行拼
+   * location.origin（当前源，admin 与站点同源）。口径对照服务端
+   * materialize，改规则两边同步。 */
+  App.itemNo = function (id) { return 'NO.' + String(id).padStart(3, '0') }
+  App.itemPath = function (id) { return '/item/' + id }
+  App.docPath = function (id) { return '/item/' + id + '/doc' }
+  App.isDoc = function (row) { return !!(row && row.kind === 'doc') }
+
   // 把 SDK / PostgreSQL 的错误翻译成人话
   App.msg = function (err) {
     if (!err) return '发生未知错误'
@@ -82,7 +94,7 @@
     return err.message || String(err)
   }
 
-  /* ---------- 3. Toast ---------- */
+  /* ---------- 4. Toast ---------- */
   var toastEl = null
   var toastTimer = null
   App.toast = function (text, kind) {
@@ -97,7 +109,7 @@
     toastTimer = setTimeout(function () { toastEl.className = 'toast' }, 2600)
   }
 
-  /* ---------- 4. 模态 ---------- */
+  /* ---------- 5. 模态 ---------- */
   function mountModal(html, opts) {
     opts = opts || {}
     var host = document.getElementById('modalMount') || document.body
@@ -146,7 +158,7 @@
     })
   }
 
-  /* ---------- 5. 登录 ---------- */
+  /* ---------- 6. 登录 ---------- */
   var Auth = {
     session: null,
     user: null,
@@ -234,7 +246,7 @@
   }
   App.auth = Auth
 
-  /* ---------- 6. 登录面板（微信 + WorkBuddy，两者都走平台 Relay） ---------- */
+  /* ---------- 7. 登录面板（微信 + WorkBuddy，两者都走平台 Relay） ---------- */
   App.renderLogin = function (mount, opts) {
     opts = opts || {}
     if (!App.ready) {
@@ -297,6 +309,6 @@
     btns[1].addEventListener('click', function () { startOAuth('workbuddy') })
   }
 
-  /* ---------- 7. 启动时统一跑一次会话恢复 ---------- */
+  /* ---------- 8. 启动时统一跑一次会话恢复 ---------- */
   App.bootstrap = function () { return Auth.start() }
 })()
