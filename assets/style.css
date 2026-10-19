@@ -614,10 +614,11 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 }
 
 /* ---------------- 相邻条目导航 ----------------
- * 概览两侧的墨色箭头页签，悬停/聚焦滑出邻居标题卡（瞬时预览）。
- * 页签钉在栏缘不动：.sibnav 以贴近栏缘的一侧锚定，页签即锚定侧的
- * 第一个元素，卡片只在页签外侧（页缘方向）生长 —— 上一条的卡在页签
- * 左边，下一条的卡在页签右边。到头的一侧不渲染页签。
+ * 概览两侧的箭头页签，悬停/聚焦滑出邻居标题卡（瞬时预览）。
+ * 配色与主按钮「查看原文」同款（pub-accent / 悬停 pub-accent-deep），
+ * 全页按钮语言统一。页签钉在栏缘不动：.sibnav 以贴近栏缘的一侧锚定，
+ * 页签即锚定侧的第一个元素，卡片只在页签外侧（页缘方向）生长 ——
+ * 上一条的卡在页签左边，下一条的卡在页签右边。到头的一侧不渲染页签。
  * 窄屏页缘没有页签的容身之处，退化为概览下方的横排签（.sibnav-mini）。
  */
 .summary-zone { position: relative; }
@@ -628,15 +629,15 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 }
 /* row-reverse：DOM 顺序是 [箭头, 卡]，视觉反转为 [卡, 箭头]，
  * 箭头压在容器右缘（锚定缘），卡片向左生长 */
-.sibnav-prev { right: calc(100% + 16px); flex-direction: row-reverse; }
+.sibnav-prev { right: calc(100% + 28px); flex-direction: row-reverse; }
 /* 默认 row：箭头压在容器左缘（锚定缘），卡片向右生长 */
-.sibnav-next { left: calc(100% + 16px); }
+.sibnav-next { left: calc(100% + 28px); }
 .sibnav-arrow {
   display: flex; align-items: center; justify-content: center;
   width: 40px; height: 56px; border-radius: 8px;
-  background: var(--ink); color: #f4f2ec; font-size: 18px;
+  background: var(--pub-accent); color: #fff; font-size: 18px;
 }
-.sibnav:hover .sibnav-arrow, .sibnav:focus-visible .sibnav-arrow { background: var(--pub-accent); }
+.sibnav:hover .sibnav-arrow, .sibnav:focus-visible .sibnav-arrow { background: var(--pub-accent-deep); }
 /* 收起时 max-width 0 + 透明边框 + 无投影：页签之间不留任何残影 */
 .sibnav-card {
   display: block; max-width: 0; overflow: hidden; opacity: 0;
@@ -660,8 +661,8 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 .sibnav-meta { font-family: var(--mono); font-size: 11px; color: #8d8fa0; }
 
 /* 卡片向页缘外侧生长，余量 = 120px 页内边距 + 视口超出 980px 部分的一半：
- *   ≥1400px 全宽卡（250px，需 314px 余量）；1221–1399px 收窄卡（172px，
- *   需 236px）；≤1220px 页缘连收窄卡都放不下，退化为概览下方的横排签。
+ *   ≥1400px 全宽卡（250px，需 326px 余量）；1241–1399px 收窄卡（172px，
+ *   需 248px）；≤1240px 页缘连收窄卡都放不下，退化为概览下方的横排签。
  */
 @media (max-width: 1400px) {
   .sibnav:hover .sibnav-card, .sibnav:focus-visible .sibnav-card { max-width: 172px; }
@@ -669,17 +670,20 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
 }
 
 .sibnav-mini { display: none; }
-@media (max-width: 1220px) {
+@media (max-width: 1240px) {
   .sibnav { display: none; }
-  .sibnav-mini { display: flex; gap: 10px; margin-top: 20px; }
+  .sibnav-mini { display: flex; gap: 10px; margin-top: 28px; }
   .sibnav-mini a, .sibnav-mini-none {
     flex: 1; min-width: 0; padding: 10px 12px; box-sizing: border-box;
-    border: 1px solid var(--paper-line); background: #faf8f2;
-    font-size: 13px; color: var(--ink-2); text-decoration: none;
+    border: 1px solid transparent; border-radius: 8px;
+    font-size: 13px; text-decoration: none;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* 横排签与页签同色：主按钮蓝；「没有了」签维持纸面弱化态 */
+  .sibnav-mini a { background: var(--pub-accent); border-color: var(--pub-accent); color: #fff; }
+  .sibnav-mini-none { background: #faf8f2; border-color: var(--paper-line); color: #8d8fa0; }
   .sibnav-mini a:last-child, .sibnav-mini-none:last-child { text-align: right; }
-  .sibnav-mini a:hover { border-color: var(--pub-accent); color: var(--pub-accent); }
+  .sibnav-mini a:hover { background: var(--pub-accent-deep); border-color: var(--pub-accent-deep); }
 }
 .detail-foot { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 32px 0 6px; }
 .detail-src {
