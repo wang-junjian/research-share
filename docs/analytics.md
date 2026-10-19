@@ -118,7 +118,7 @@ declare v_event text := lower(coalesce(p_event,''));
 begin
   -- 1. 事件名白名单，不认识的直接丢弃（不报错，避免暴露字典）
   if v_event <> all (array['session_start','page_view','view_item','select_content',
-                         'change_view_mode','outbound_click','share','session_end',
+                         'change_view_mode','outbound_click','share',
                          'error','content_publish']) then return; end if;
 
   -- 2. 属性白名单 + 类型收敛：只留已知键，字符串一律截断
@@ -173,19 +173,18 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 
 ## 5. 事件字典
 
-### 5.1 事件清单（共 9 个）
+### 5.1 事件清单（共 8 个）
 
 | # | 事件名 | GA4 对应 | 触发时机 | 私有属性 | 端 |
 |---|---|---|---|---|---|
 | 1 | `session_start` | session_start | 新会话的首个事件之前 | `landing` | C |
 | 2 | `page_view` | page_view | 页面 `load` 后（客户端）／SSR 渲染时（服务端） | `title` | **S + C** |
 | 3 | `view_item` | view_item | 详情页可见（同会话同条目 3 秒内去抖） | `item_id, from` | C |
-| 4 | `select_content` | select_content | 首页卡片点击后跳转前 | `item_id, position, view_mode` | C |
-| 5 | `change_view_mode` | — | 网格/列表切换 | `to` | C |
-| 6 | `outbound_click` | click (outbound) | 点「查看原文 ↗」或详情页原文链接 | `item_id, dest_host` | C |
-| 7 | `share` | **share** | 点任一分享按钮（成功或降级都记） | `method, degrade, item_id` | C |
-| 8 | `error` | — | `window.onerror` / 资源加载失败 / 服务端 5xx | `kind, msg` | S + C |
-| 9 | `content_publish` | — | 新成果落库成功后（`research_items` 的 AFTER INSERT 触发器） | `item_id` | **S** |
+| 4 | `select_content` | select_content | 首页卡片点击后跳转前 | `item_id, position` | C |
+| 5 | `outbound_click` | click (outbound) | 点「查看原文 ↗」或详情页原文链接 | `item_id, dest_host` | C |
+| 6 | `share` | **share** | 点任一分享按钮（成功或降级都记） | `method, degrade, item_id` | C |
+| 7 | `error` | — | `window.onerror` / 资源加载失败 / 服务端 5xx | `kind, msg` | S + C |
+| 8 | `content_publish` | — | 新成果落库成功后（`research_items` 的 AFTER INSERT 触发器） | `item_id` | **S** |
 
 `share` 的 5 个 `method` 取值，与现有按钮一一对应：`copy_link` / `copy_text` / `show_poster` / `copy_poster` / `copy_poster_link`。
 —— 这一条会直接回答一个悬了很久的问题：**5 个分享按钮里，哪几个是真的被用了、哪几个是摆设。**
@@ -195,8 +194,13 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 **`session_end` 已从字典中去掉**（原表第 8 项）。理由：会话边界由「30 分钟不活动」定义，
 而 `pagehide` 只代表页面卸载、不代表会话结束——两者不是一回事，记下来反而会制造一个漂亮的错数。
 `session_end` 原本携带的 `pages`（本会话浏览页数）可由同会话的 `page_view` 条数直接算出，
-属于冗余字段。数据库的 `track_event` 白名单同步只接受上表 9 个事件，
-发 `session_end` 会被计入「不认识的事件名」而不是静默入库（见 §14.1 第 4 条）。
+属于冗余字段。数据库的 `track_event` 白名单不收 `session_end`，
+发它会被计入「不认识的事件名」而不是静默入库（见 §14.1 第 4 条）。
+
+**`change_view_mode` 已下线（v2，2026-10-19）**：视图切换功能移除后前端不再发送该事件，
+`select_content` 也不再携带 `view_mode`。`track_event` 白名单仍接受它（缓存页面可能还在发，
+收下比报错好），但漏斗的「首页有交互」自 db/07 起只计 `select_content`；
+历史事件保留在库中可回溯。口径版本随之 v1 → v2（见 §14.1 第 6 条）。
 
 
 ### 5.2 公共属性（采集层统一注入，业务代码不手传）
@@ -207,12 +211,13 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 | `session_id` | 随机 22 位 | 30 分钟不活动即新建 |
 | `device` / `os` / `browser` | 枚举 | 由 UA 解析，服务端统一做（客户端只负责送 UA） |
 | `ref_kind` | `wechat\|zhihu\|search\|direct\|internal\|other` | 服务端归类，避免客户端口径漂移 |
-| `app_version` | `v1` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比 |
+| `app_version` | `v2` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比（v2：下线 `change_view_mode`） |
 | `page` | 路径 | 不含 query，避免把搜索词/令牌带进库 |
 
 ### 5.3 `props` 白名单（防事件表被当垃圾场）
 
 只接受：`method`(enum) `to`(enum) `view_mode`(enum) `position`(int 0–200) `dest_host`(host ≤64) `from`(enum) `kind`(enum) `msg`(≤120 字) `landing`(路径) `degrade`(bool) `q`(≤60 字，后台搜索用)。
+（`to` / `view_mode` 是已下线的 `change_view_mode` 与旧版 `select_content` 的历史键，白名单保留以兼容滞留的缓存页面；v2 客户端不再发送。）
 其余键**静默丢弃**。枚举类字段值不在表内的，丢弃该键而非整条事件。
 （`degrade` 是 `share` 用来标记「浏览器剪贴板不可用、退化成手动长按」的布尔位，看板的分享效力表要用它。）
 
@@ -463,6 +468,21 @@ resize 后空态必须仍是空态（`trendEmpty && trendRects === 0 && hourlyEm
 这同时违反了 §7「`/api/track` 永远返回 204」的约定。
 **改法**：拒绝后改为 `req.resume()` 排空余下数据，让响应正常送达；
 内存仍由累积上限守住，只是不再「连读都不读」。实测 >16KB→204、>512KB→413。
+
+### 7. `change_view_mode` 下线（事件字典 9 → 8，口径 v1 → v2，2026-10-19）
+
+视图切换功能移除后，`change_view_mode` 不再有发送方，`select_content` 也不再携带 `view_mode`。
+这次一开始只改了前端、忘了递增 `VERSION`——正好踩在自己定的规矩上（§5.2：改口径必须递增，
+否则跨版本趋势不可比）。补做三件事：
+
+- `assets/track.js` 与 `lib/track.js`（SSR 侧）的版本号同步升为 `v2`；
+- 新增 db/07：漏斗「首页有交互」的 `interacted` 只计 `select_content`，不再计入 `change_view_mode`，
+  提示语同步去掉「或切换视图」——否则历史会话里的该事件会抬高旧数据，与 v2 混在一起；
+- `track_event` 白名单**保留** `change_view_mode` 与 `to`/`view_mode` 键：缓存页面可能还在发，
+  收下存着比报错好，历史数据可回溯。
+
+教训与 §14.1 第 4 条（`session_end`）同款：事件下线是一个三件套——前端停发、口径版本递增、
+看板函数与文档同步，少一件就会留下一处自相矛盾的描述。
 
 ### 关于 `dashboard-preview.html`
 
