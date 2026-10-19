@@ -76,17 +76,25 @@ npm start
 db/01-research-items.sql   内容表、管理员表、is_admin()
 db/02-agent-api.sql        agent_tokens、四个读写函数
 db/03-analytics.sql        埋点表、track_event()、analytics_dashboard()
+db/04-track-event-version.sql   track_event() 接入口径版本
+db/05-founder-admin.sql    初始管理员：is_founder 列、is_founder()、任命权收窄 + 种子
 ```
 
-**3. 把自己设为管理员**
+**3. 初始管理员**
 
-登录一次后台，从浏览器控制台取出自己的 user id，然后：
-
-```sql
-insert into public.admins (user_id) values ('<your-user-id>');
-```
+管理员任命权收归「初始管理员」独占（ADR-0003）：只有初始管理员能任命或移除管理员，普通管理员只能管理成果与看板。`db/05` 会把种子 user_id 标为初始管理员——**clone 本仓库自建部署时，先把 `db/05` 末尾的 user_id 换成你自己的**（登录一次后台，「管理员设置」里可见并复制），再执行迁移。
 
 不执行这一步，后台能登录但没有任何写权限，也看不到「数据看板」页签。
+
+初始管理员不可经后台或 API 移除（RLS 拦截，含本人）。要交接时走一次性手工 SQL：
+
+```sql
+-- 顺序不能反：唯一索引要求全站至多一个 founder，先交权再授权
+begin;
+update public.admins set is_founder = false where user_id = '<你自己>';
+update public.admins set is_founder = true  where user_id = '<接任者>';  -- 须已是管理员
+commit;
+```
 
 **4. 配置并启动**
 
@@ -264,7 +272,7 @@ npm install && npm start     # 演示模式，先确认界面能跑
 
 要接上真实数据：
 
-1. 接入云服务，按顺序执行 `db/01` → `db/02` → `db/03`，把自己加进 `public.admins`
+1. 接入云服务，按顺序执行 `db/01` → `db/05`（`db/05` 末尾的初始管理员 user_id 先换成你自己的）
 2. 填 `.env`：`CLOUD_ENDPOINT`、`CLOUD_PUBLISHABLE_KEY`、`SITE_URL`
 3. 发布 → 得到 `https://<你的前缀>.app.workbuddy.host`
 4. **再发布一次**：把 `CLOUD_ENDPOINT` 和 `SITE_URL` 改成上一步拿到的域名
@@ -322,6 +330,6 @@ git clone https://github.com/wang-junjian/research-share.git
 cd research-share && npm install && npm start
 ```
 
-Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/02` → `db/03`, fill in `.env`, and insert yourself into `public.admins`.
+Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/05`, fill in `.env`, and put your own user id in the founder seed at the end of `db/05` before running it.
 
 Key design decisions are documented in Chinese above and in [`docs/analytics.md`](docs/analytics.md).

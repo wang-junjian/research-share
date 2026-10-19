@@ -1,7 +1,7 @@
 -- ===========================================================================
 -- 01 · 基础表：内容与管理员
 --
--- 执行顺序：01 → 02 → 03。三个文件都是幂等的（IF NOT EXISTS / CREATE OR REPLACE），
+-- 执行顺序：01 → 02 → 03 → 04 → 05。所有文件都是幂等的（IF NOT EXISTS / CREATE OR REPLACE），
 -- 重复执行不会报错，也不会清空已有数据。
 --
 -- 角色说明（与云服务的 RLS 模型对应）：
@@ -100,8 +100,7 @@ grant select on public.research_items to anon;
 grant select, insert, update, delete on public.research_items to authenticated;
 grant select, insert, delete on public.admins to authenticated;
 
--- ---- 6. 种子：把第一个管理员加进去 -----------------------------------------
--- 先登录一次后台，从浏览器控制台拿到自己的 user id，然后取消下面两行的注释。
--- 不填这一步，后台能登录但没有任何写权限（也不显示「数据看板」页签）。
---
--- insert into public.admins (user_id) values ('<your-user-id>') on conflict do nothing;
+-- ---- 6. 种子 ----------------------------------------------------------------
+-- 本文件不再 seed 管理员：db/05 引入「初始管理员」后会把自己的 user_id 直接
+-- 写进 admins 并标 is_founder = true，任命权（admins 的增删）也同步收窄到
+-- 初始管理员。要加第一个管理员，去执行 db/05（自建部署先换成自己的 user_id）。
