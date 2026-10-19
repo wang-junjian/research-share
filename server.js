@@ -71,6 +71,26 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         })
         return res.end(png)
       }
+      // 文档型成果的托管地址：直出原始 HTML。与 OG 封面同等待遇——不埋
+      // page_view（否则详情页浏览会被双倍计数）。CSP sandbox 把文档关进
+      // 孤立源：脚本能跑（图表可交互）但摸不到访客登录会话（docs/adr/0004）。
+      const docm = path.match(/^\/item\/(\d+)\/doc\/?$/)
+      if (docm) {
+        const it = await itemsStore.find(Number(docm[1]))
+        if (!it || it.kind !== 'doc') {
+          return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
+        }
+        const doc = await itemsStore.findDocument(it.id)
+        if (!doc || doc.doc_html == null) {
+          return sendHtml(res, 404, renderError(site, '未找到该研究成果'))
+        }
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': 'sandbox allow-scripts',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        return res.end(doc.doc_html)
+      }
       const m = path.match(/^\/item\/(\d+)\/?$/)
       if (m) {
         const it = await itemsStore.find(Number(m[1]))
