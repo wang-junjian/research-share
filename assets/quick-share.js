@@ -1,7 +1,7 @@
 /* ============================================================
- * 首页快速分享入口（顶栏「＋ 分享」）
+ * 快速分享入口（顶栏「＋ 分享」）
  *
- * 挂载点 [data-share-entry] 只由首页输出（lib/render.js 的 shareEntry 选项），
+ * 挂载点 [data-share-entry] 由首页与详情页输出（lib/render.js 的 shareEntry 选项），
  * SSR 默认 hidden：本脚本读到有效会话后才显示 —— 与 auth-chip.js 同款门控，
  * 读者永远看不到这个入口。
  *

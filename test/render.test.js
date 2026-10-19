@@ -81,6 +81,17 @@ test('renderDetail 转义标题中的 HTML', () => {
   assert.doesNotMatch(html, /<h1 class="detail-title"><img/)
 })
 
+test('renderDetail 顶栏含「分享」快速录入挂载点（与首页同一入口）', () => {
+  const html = renderDetail(site, item)
+  assert.match(html, /<button class="topbar-link topbar-share" type="button" data-share-entry hidden>/)
+})
+
+test('renderDetail 有 publicConfigJson 时加载 quick-share.js', () => {
+  const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
+  const html = renderDetail(authSite, item)
+  assert.match(html, /<script src="\/assets\/quick-share\.js" defer><\/script>/)
+})
+
 test('layout 顶栏默认渲染「登录」入口（挂载点 data-auth-chip）', () => {
   const html = layout(site, { title: 'T', description: 'D', body: 'B' })
   assert.match(html, /<nav class="topbar-nav" data-auth-chip>/)
