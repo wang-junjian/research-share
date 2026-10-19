@@ -6,18 +6,43 @@
  * 读者永远看不到这个入口。
  *
  * 流程（设计结论见分支 proto/quick-share-entry 的原型，A2 模式）：
- *   模态录入（标题/概览/链接/日期，与后台录入同口径）
+ *   模态录入（标题/概览/日期，加「链接 / 文档」类型切换：
+ *     链接型填站外原文链接；文档型拖入/选择 .html 文件或粘贴 HTML 源码，
+ *     两个入口汇入同一份 HTML 文本，提交前预检「非空、≤ 1MB 字符、不含脚本」——
+ *     含 <script>/内联事件属性的文档会被平台边缘 WAF 直接 403，见下方 DOC_BLOCKED）
  *   → 浏览器 SDK 直写 research_items（与 admin 同一条写入路径，绕过本进程；
+ *     文档型带 kind:'doc' + doc_html、url 留空，由 db/06 的 CHECK 兜底；
  *     首页列表的 60s 缓存不受影响——成功态直接带用户去详情页，
  *     而 find 的「miss → invalidate → 重查」保证详情页立即可见）
  *   → 成功态给出「去详情页分享 →」：详情页本就有完整分享条（链接/文字/海报），
- *     分享能力永远与详情页同步，不在这里维护第二份
+ *     文档型在详情页内嵌全文（地基票 #3），分享能力永远与详情页同步，
+ *     不在这里维护第二份
  *
  * 无构建步骤：defer 加载，排在 vendor SDK 与 cloud.js 之后，
  * 消费它们挂出的 window.cloud / window.App。任何一步失败静默降级。
  * ============================================================ */
 (function () {
   'use strict'
+
+  // 与 db/06 的 CHECK 同口径：1MB 按字符数计（char_length）
+  var DOC_MAX_CHARS = 1000000
+
+  // 平台边缘 WAF 的 XSS 规则会直接 403 掉含脚本的请求体（返回一张 HTML 拦截页，
+  // 不是 JSON），请求根本到不了应用 —— 浏览器直写数据面与 Agent API 两条写入通道
+  // 同此限制。所以文档型只收静态 HTML：在这里前置拦下并说清原因，
+  // 而不是让人撞上一个看不懂的 403 页面。
+  var DOC_BLOCKED = [
+    { re: /<\s*script[\s>]/i, what: '<script> 标签' },
+    { re: /\son[a-z]{3,}\s*=/i, what: '内联事件属性（如 onclick=）' },
+    { re: /javascript\s*:/i, what: 'javascript: 链接' }
+  ]
+
+  function blockedInDoc(html) {
+    for (var i = 0; i < DOC_BLOCKED.length; i++) {
+      if (DOC_BLOCKED[i].re.test(html)) return DOC_BLOCKED[i].what
+    }
+    return ''
+  }
 
   var entry = document.querySelector('[data-share-entry]')
   if (!entry) return
@@ -38,12 +63,24 @@
       '<div class="modal qs-modal" style="max-width:520px">' +
       '  <div class="modal-head"><h3>分享新成果</h3></div>' +
       '  <div class="modal-body">' +
+      '    <div class="qs-tabs" role="tablist" aria-label="成果类型">' +
+      '      <button type="button" class="qs-tab is-on" role="tab" aria-selected="true" data-qs-tab="link">链接</button>' +
+      '      <button type="button" class="qs-tab" role="tab" aria-selected="false" data-qs-tab="doc">文档</button>' +
+      '    </div>' +
       '    <div class="modal-field"><input data-qs="title" type="text" maxlength="120" placeholder="标题：一句话说清这项研究" autocomplete="off"></div>' +
       '    <div class="modal-field"><textarea data-qs="summary" maxlength="400" placeholder="概览（约 200 字）：研究内容、方法、结论。微信分享卡片会取前 80 字。"></textarea></div>' +
-      '    <div class="qs-row">' +
+      '    <div class="qs-pane" data-qs="paneLink">' +
       '      <div class="modal-field"><input data-qs="url" type="url" placeholder="原文链接 https://" autocomplete="off"></div>' +
-      '      <div class="modal-field"><input data-qs="date" type="date" title="成果日期，默认今天"></div>' +
       '    </div>' +
+      '    <div class="qs-pane" data-qs="paneDoc" hidden>' +
+      '      <div class="qs-drop" data-qs="drop" role="button" tabindex="0">' +
+      '        <input data-qs="file" type="file" accept=".html,.htm,text/html" hidden>' +
+      '        <span>拖入 .html 文件到这里，或点击选择文件</span>' +
+      '      </div>' +
+      '      <div class="modal-field"><textarea data-qs="source" class="qs-source" placeholder="或直接粘贴 HTML 源码（自包含文档：样式与内容全部内联，不含脚本）" spellcheck="false"></textarea></div>' +
+      '      <span class="qs-count" data-qs="count">0 / 1,000,000 字符</span>' +
+      '    </div>' +
+      '    <div class="modal-field qs-date"><input data-qs="date" type="date" title="成果日期，默认今天"></div>' +
       '  </div>' +
       '  <div class="modal-foot">' +
       '    <span class="qs-hint" data-qs="hint" role="status" aria-live="polite"></span>' +
@@ -66,18 +103,100 @@
       el.hint.textContent = msg
       el.hint.className = 'qs-hint is-error'
     }
+    function note(msg) {
+      el.hint.textContent = msg
+      el.hint.className = 'qs-hint'
+    }
+
+    /* ---- 类型切换：链接 / 文档（默认链接，标元字段两型共用） ---- */
+    var kind = 'link'
+    m.el.querySelectorAll('[data-qs-tab]').forEach(function (tab) {
+      tab.addEventListener('click', function () { setKind(tab.getAttribute('data-qs-tab')) })
+    })
+    function setKind(next) {
+      kind = next === 'doc' ? 'doc' : 'link'
+      el.paneLink.hidden = kind !== 'link'
+      el.paneDoc.hidden = kind !== 'doc'
+      m.el.querySelectorAll('[data-qs-tab]').forEach(function (tab) {
+        var on = tab.getAttribute('data-qs-tab') === kind
+        tab.classList.toggle('is-on', on)
+        tab.setAttribute('aria-selected', on ? 'true' : 'false')
+      })
+      note('')
+    }
+
+    /* ---- 文档录入：文件选择/拖拽与源码粘贴汇入同一份 HTML 文本 ---- */
+    function updateCount() {
+      var n = el.source.value.length
+      el.count.textContent = n.toLocaleString() + ' / ' + DOC_MAX_CHARS.toLocaleString() + ' 字符'
+      el.count.classList.toggle('is-over', n > DOC_MAX_CHARS)
+    }
+    function readFile(file) {
+      if (!file) return
+      if (!/\.html?$/i.test(file.name || '') && file.type !== 'text/html') {
+        fail('请选择 .html 文件')
+        return
+      }
+      file.text().then(function (text) {
+        el.source.value = text // 与粘贴入口汇合：textarea 即唯一事实来源
+        updateCount()
+        note('已载入文件：' + file.name)
+      }).catch(function () {
+        fail('读取文件失败，请重试或改用粘贴源码')
+      })
+    }
+    el.source.addEventListener('input', updateCount)
+    el.file.addEventListener('change', function () {
+      readFile(el.file.files && el.file.files[0])
+      el.file.value = '' // 允许重复选择同一文件
+    })
+    el.drop.addEventListener('click', function () { el.file.click() })
+    el.drop.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.file.click() }
+    })
+    el.drop.addEventListener('dragover', function (e) {
+      e.preventDefault()
+      el.drop.classList.add('is-over')
+    })
+    el.drop.addEventListener('dragleave', function () {
+      el.drop.classList.remove('is-over')
+    })
+    el.drop.addEventListener('drop', function (e) {
+      e.preventDefault()
+      el.drop.classList.remove('is-over')
+      readFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0])
+    })
 
     el.publish.addEventListener('click', function () {
       var payload = {
         title: el.title.value.trim(),
         summary: el.summary.value.trim(),
-        url: el.url.value.trim(),
         item_date: el.date.value || App.today(),
         owner_name: user.name || null,
       }
-      if (!payload.title || !payload.summary || !payload.url) {
-        fail('请填写标题、概览与原文链接')
-        return
+      if (kind === 'doc') {
+        // 文档型：kind:'doc' + doc_html 直插，url 留空（不传，走列默认 NULL）
+        var docHtml = el.source.value
+        if (!payload.title || !payload.summary) { fail('请填写标题与概览'); return }
+        if (!docHtml.trim()) { fail('文档为空：请拖入 .html 文件或粘贴 HTML 源码'); return }
+        if (docHtml.length > DOC_MAX_CHARS) {
+          fail('文档超过 1MB 上限（' + docHtml.length.toLocaleString() + ' 字符），请压缩或拆分后分享')
+          return
+        }
+        var blocked = blockedInDoc(docHtml)
+        if (blocked) {
+          fail('文档含' + blocked + '：平台边缘防护会直接拦下这类提交（403），请改成不含脚本的静态 HTML 再分享')
+          return
+        }
+        payload.kind = 'doc'
+        payload.doc_html = docHtml
+      } else {
+        // 链接型：路径完全不变
+        payload.url = el.url.value.trim()
+        if (!payload.title || !payload.summary || !payload.url) {
+          fail('请填写标题、概览与原文链接')
+          return
+        }
       }
       busy(true)
       el.hint.textContent = ''

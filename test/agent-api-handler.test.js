@@ -261,3 +261,136 @@ test('读路径保持公开：GET /api/items 无需 token；不存在的方法�
     assert.equal(put.status, 405)
   })
 })
+
+// ---- 文档型成果写入契约（GLOSSARY: 文档型成果 / 托管地址；内容不可变 docs/adr/0004） ----
+
+const DOC = '<!DOCTYPE html><html><body><h1>DOC-MARKER</h1></body></html>'
+const post = (base, payload) =>
+  fetch(`${base}/api/items`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...auth },
+    body: JSON.stringify(payload),
+  })
+
+test('POST 携带 doc_html → 文档型：p_doc_html 透传 rpc、p_url 置空、201', async () => {
+  await withApi(
+    { agent_upsert_item: { data: { action: 'created', id: 7 }, error: null } },
+    async (base, cloud) => {
+      const res = await post(base, { title: 'T', summary: 'S', doc_html: DOC, source_key: 'k' })
+      assert.equal(res.status, 201)
+      assert.equal(cloud.calls.length, 1)
+      const args = cloud.calls[0].args
+      assert.equal(args.p_doc_html, DOC)
+      assert.equal(args.p_url, null) // 文档型没有站外原文链接，url 不落库
+    },
+  )
+})
+
+test('POST 文档型与 url 并存 → 400 invalid_field，rpc 未被调用', async () => {
+  await withApi({}, async (base, cloud) => {
+    const res = await post(base, { title: 'T', summary: 'S', doc_html: DOC, url: 'https://a.com' })
+    assert.equal(res.status, 400)
+    assert.equal((await res.json()).error, 'invalid_field')
+    assert.equal(cloud.calls.length, 0)
+  })
+})
+
+test('链接型契约不变：不携带 doc_html 时 url 依旧必填', async () => {
+  await withApi({}, async (base, cloud) => {
+    const res = await post(base, { title: 'T', summary: 'S' })
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.equal(body.error, 'missing_field')
+    assert.match(body.message, /url/)
+    assert.equal(cloud.calls.length, 0)
+  })
+})
+
+test('doc_html 超 1MB 字符 → 400 field_too_long；恰 1MB 字符放行到 rpc（请求体上限已放宽）', async () => {
+  await withApi(
+    { agent_upsert_item: { data: { action: 'created', id: 7 }, error: null } },
+    async (base, cloud) => {
+      const tooLong = await post(base, { title: 'T', summary: 'S', doc_html: 'x'.repeat(1_000_001) })
+      assert.equal(tooLong.status, 400)
+      assert.equal((await tooLong.json()).error, 'field_too_long')
+      assert.equal(cloud.calls.length, 0)
+
+      // 恰 1MB 字符（约 1.05MB 请求体）：旧的 512KB 上限会 413，放宽后应直达 rpc
+      const exact = await post(base, { title: 'T', summary: 'S', doc_html: 'x'.repeat(1_000_000) })
+      assert.equal(exact.status, 201)
+      assert.equal(cloud.calls.length, 1)
+      assert.equal(cloud.calls[0].args.p_doc_html.length, 1_000_000)
+    },
+  )
+})
+
+test('请求体超 2MB → 413 payload_too_large', async () => {
+  await withApi({}, async (base, cloud) => {
+    const res = await post(base, { title: 'T', summary: 'S', doc_html: 'x'.repeat(2 * 1024 * 1024) })
+    assert.equal(res.status, 413)
+    assert.equal((await res.json()).error, 'payload_too_large')
+    assert.equal(cloud.calls.length, 0)
+  })
+})
+
+test('batch 支持文档型：doc_html 透传且 url 置空；批内文档型与 url 并存 → 400 整批不进 rpc', async () => {
+  await withApi(
+    { agent_upsert_items: { data: { created: 2, updated: 0, total: 2, items: [] }, error: null } },
+    async (base, cloud) => {
+      const ok = await fetch(`${base}/api/items/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ items: [VALID, { title: 'D', summary: 'S', doc_html: DOC }] }),
+      })
+      assert.equal(ok.status, 200)
+      const items = cloud.calls[0].args.p_items
+      assert.equal(items[0].doc_html, null) // 链接型不带 doc_html
+      assert.equal(items[0].url, 'https://a.com')
+      assert.equal(items[1].doc_html, DOC)
+      assert.equal(items[1].url, null)
+
+      const bad = await fetch(`${base}/api/items/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({ items: [{ title: 'D', summary: 'S', doc_html: DOC, url: 'https://a.com' }] }),
+      })
+      assert.equal(bad.status, 400)
+      assert.equal(cloud.calls.length, 1) // 整批被拦下
+    },
+  )
+})
+
+test('PATCH 只要携带 doc_html 键即拒：空串与 null 同样 → 400 immutable_field，rpc 未被调用', async () => {
+  await withApi({}, async (base, cloud) => {
+    for (const payload of [{ doc_html: '' }, { doc_html: null }]) {
+      const res = await fetch(`${base}/api/items/7`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify(payload),
+      })
+      assert.equal(res.status, 400)
+      assert.equal((await res.json()).error, 'immutable_field')
+    }
+    assert.equal(cloud.calls.length, 0)
+  })
+})
+
+test('PATCH 携带 doc_html → 400（文档内容不可变），rpc 未被调用；改标元不受影响', async () => {
+  await withApi({ agent_patch_item: { data: null, error: null } }, async (base, cloud) => {
+    const res = await fetch(`${base}/api/items/7`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ doc_html: DOC }),
+    })
+    assert.equal(res.status, 400)
+    assert.equal(cloud.calls.length, 0)
+
+    const meta = await fetch(`${base}/api/items/7`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ summary: '只改摘要' }),
+    })
+    assert.equal(meta.status, 200)
+    assert.equal(cloud.calls.length, 1)
+  })
+})

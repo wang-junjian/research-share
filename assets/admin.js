@@ -50,7 +50,7 @@
   /* ---------------- 数据加载 ---------------- */
   function loadItems() {
     var q = cloud.database.from('research_items')
-      .select('id, title, summary, url, item_date, owner_id, owner_name, created_at')
+      .select('id, title, summary, url, kind, item_date, owner_id, owner_name, created_at')
       .order('item_date', { ascending: false })
       .order('created_at', { ascending: false })
     return q.then(function (res) {
@@ -298,6 +298,12 @@
 
   /* ---------------- 编辑弹窗 ---------------- */
   function openEditor(row) {
+    // 文档型成果（GLOSSARY: 文档型成果）的原文不落库，url 恒为空；
+    // 链接位置只读展示派生托管地址（GLOSSARY: 托管地址），表单不能创建/替换文档（第一期）。
+    // admin 与站点同源，托管地址直接由 origin 拼出。
+    // 型别直接看 kind（存量行默认 'link'，url 可空仅文档型），不再用 url 启发式兜底。
+    var isDoc = row.kind === 'doc'
+    var docUrl = location.origin + '/item/' + row.id + '/doc'
     var m = App.mountModal(
       '<div class="modal" style="max-width:560px">' +
       '  <div class="modal-head">' +
@@ -307,7 +313,9 @@
       '  <div class="modal-body">' +
       '    <label class="modal-field"><span>标题</span><input id="edTitle" type="text" maxlength="120"></label>' +
       '    <label class="modal-field"><span>概览（约 200 字）</span><textarea id="edSummary" maxlength="400"></textarea></label>' +
-      '    <label class="modal-field"><span>原文链接</span><input id="edUrl" type="url"></label>' +
+      (isDoc
+        ? '    <label class="modal-field"><span>托管地址（文档内容不可修改）</span><input id="edUrl" type="url" readonly></label>'
+        : '    <label class="modal-field"><span>原文链接</span><input id="edUrl" type="url"></label>') +
       '    <label class="modal-field"><span>日期</span><input id="edDate" type="date"></label>' +
       '    <p class="auth-hint" id="edError"></p>' +
       '  </div>' +
@@ -327,7 +335,7 @@
 
     titleEl.value = row.title || ''
     summaryEl.value = row.summary || ''
-    urlEl.value = row.url || ''
+    urlEl.value = isDoc ? docUrl : (row.url || '')
     dateEl.value = row.item_date || App.today()
     setTimeout(function () { titleEl.focus() }, 30)
 
@@ -335,11 +343,12 @@
       var payload = {
         title: titleEl.value.trim(),
         summary: summaryEl.value.trim(),
-        url: urlEl.value.trim(),
         item_date: dateEl.value
       }
-      if (!payload.title || !payload.summary || !payload.url || !payload.item_date) {
-        errEl.textContent = '标题、概览、链接、日期都不能为空。'
+      // 文档型不提交 url：内容不可变（docs/adr/0004），标元照常可改
+      if (!isDoc) payload.url = urlEl.value.trim()
+      if (!payload.title || !payload.summary || (!isDoc && !payload.url) || !payload.item_date) {
+        errEl.textContent = isDoc ? '标题、概览、日期都不能为空。' : '标题、概览、链接、日期都不能为空。'
         errEl.className = 'auth-hint is-error'
         return
       }

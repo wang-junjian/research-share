@@ -150,7 +150,56 @@ req GET /api/items
 check "非法批未写入任何行" True "$(py "$TMP/r.json" "not any(i['source_key']=='$KEY:atomic' for i in d['items'])")"
 
 echo
-echo "── 6. 清理 ──"
+echo "── 6. 文档型成果（doc_html，幂等不覆盖）──"
+# 载荷刻意不含 <script> 与内联事件属性：平台边缘 WAF 会 403 掉这类请求体（请求连应用都到不了，
+# 见 docs/agent-api.md「含脚本的文档会被平台边缘防护拦下」），那不是本段要验证的契约。
+DOC_A='<!DOCTYPE html><html><body><h1>SMOKE-DOC-MARKER-A 首版</h1><p style="color:#333">静态文档</p></body></html>'
+DOC_B='<!DOCTYPE html><html><body><h1>SMOKE-DOC-MARKER-B 覆盖版</h1></body></html>'
+mkdoc() { python3 -c "import json,sys;print(json.dumps({'title':'冒烟文档','summary':'由 smoke.sh 写入，结尾会删掉。','doc_html':sys.argv[1],'source_key':'$KEY:doc'}))" "$1"; }
+
+req POST /api/items "$(mkdoc "$DOC_A")"
+check "POST doc_html → 201" 201 "$CODE"
+check "action=created" created "$(py "$TMP/r.json" "d['action']")"
+DOC_ID="$(py "$TMP/r.json" "d['id']")"
+DOC_URL="$(py "$TMP/r.json" "d['item']['url']")"
+check "响应 url 为托管地址" True "$(py "$TMP/r.json" "d['item']['url'].endswith('/item/$DOC_ID/doc')")"
+
+# 用响应里的托管地址直接读回（SITE_URL 派生，可能与 BASE 不同源，见 §4 注释）
+DOC_CODE=$(curl -s -D "$TMP/h.txt" -o "$TMP/doc.html" -w '%{http_code}' "$DOC_URL")
+check "托管地址可读回 → 200" 200 "$DOC_CODE"
+check "CSP sandbox 头" 1 "$(grep -ci 'content-security-policy: sandbox allow-scripts' "$TMP/h.txt")"
+check "读回内容含首版标记" 1 "$(grep -c 'SMOKE-DOC-MARKER-A' "$TMP/doc.html")"
+
+req POST /api/items "$(mkdoc "$DOC_B")"
+check "同 source_key 重投 → 200" 200 "$CODE"
+check "action=updated" updated "$(py "$TMP/r.json" "d['action']")"
+check "id 未变（幂等）" "$DOC_ID" "$(py "$TMP/r.json" "d['id']")"
+
+curl -s -o "$TMP/doc2.html" "$DOC_URL"
+check "内容保持首次写入" 1 "$(grep -c 'SMOKE-DOC-MARKER-A' "$TMP/doc2.html")"
+check "重投内容未覆盖" 0 "$(grep -c 'SMOKE-DOC-MARKER-B' "$TMP/doc2.html")"
+
+req PATCH "/api/items/$DOC_ID" '{"summary":"文档改摘要"}'
+check "PATCH 标元 → 200" 200 "$CODE"
+req PATCH "/api/items/$DOC_ID" "{\"doc_html\":\"$DOC_B\"}"
+check "PATCH 带 doc_html → 400" 400 "$CODE"
+
+req POST /api/items "{\"title\":\"x\",\"summary\":\"y\",\"url\":\"https://e.com\",\"doc_html\":\"<p>x</p>\"}"
+check "doc_html 与 url 并存 → 400" 400 "$CODE"
+
+# 恰超 1MB 字符（ASCII，约 1.05MB 请求体，在 2MB 上限内）：应被字段校验拦下
+python3 -c "import json;print(json.dumps({'title':'x','summary':'y','doc_html':'x'*1000001,'source_key':'$KEY:big'}))" > "$TMP/big.json"
+CODE=$(curl -s -o "$TMP/r.json" -w '%{http_code}' -X POST "$BASE/api/items" -H "$AUTH_HEADER: $TOKEN" -H 'Content-Type: application/json' --data-binary @"$TMP/big.json")
+check "超 1MB 文档 → 400" 400 "$CODE"
+check "错误类型" field_too_long "$(py "$TMP/r.json" "d['error']")"
+
+req DELETE "/api/items/$DOC_ID"
+check "文档型 DELETE → 200" 200 "$CODE"
+DOC_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$DOC_URL")
+check "删后托管地址 → 404" 404 "$DOC_CODE"
+
+echo
+echo "── 7. 清理 ──"
 req DELETE "/api/items/$ID"
 check "DELETE → 200" 200 "$CODE"
 req GET "/api/items/$ID"
