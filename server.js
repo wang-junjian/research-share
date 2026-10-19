@@ -132,9 +132,9 @@ async function main() {
   const DEMO = !ENDPOINT || !PUBLISHABLE_KEY
 
   const FAVICON_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>" +
-    "<rect width='64' height='64' rx='14' fill='%230F1013'/>" +
-    "<rect x='6.75' y='6.75' width='50.5' height='50.5' rx='9' fill='none' stroke='%23E0A458' stroke-opacity='.45' stroke-width='1.5'/>" +
-    "<text x='32' y='45' font-family='Songti SC,serif' font-size='34' fill='%23E0A458' text-anchor='middle'>研</text></svg>"
+    "<rect width='64' height='64' rx='14' fill='%23FAF9F7'/>" +
+    "<rect x='6.75' y='6.75' width='50.5' height='50.5' rx='9' fill='none' stroke='%23C62B38' stroke-opacity='.5' stroke-width='1.5'/>" +
+    "<text x='32' y='45' font-family='Songti SC,serif' font-size='34' fill='%23C62B38' text-anchor='middle'>研</text></svg>"
   const FAVICON = 'data:image/svg+xml,' + FAVICON_SVG.replaceAll('#', '%23')
 
   // 注入页面的公开配置（publishableKey 无权限语义，可进源码）。
@@ -162,6 +162,7 @@ async function main() {
     assetsDir: fileURLToPath(new URL('./assets/', import.meta.url)),
     adminTemplate: fileURLToPath(new URL('./admin.html', import.meta.url)),
     publicConfigJson: PUBLIC_CONFIG_JSON,
+    favicon: FAVICON,
   })
 
   const cloud = DEMO
