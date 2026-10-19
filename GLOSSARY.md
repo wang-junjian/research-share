@@ -4,9 +4,11 @@
 
 ## 核心概念
 
-- **研究成果（Item）**：本站分享的一条内容单元：标题、概览（summary）、原文链接、日期。对应数据表 `research_items`。
+- **研究成果（Item）**：本站分享的一条内容单元：标题、概览（summary）、原文链接、日期。对应数据表 `research_items`。按正文形态分两种：**链接型成果**与**文档型成果**。
+- **链接型成果（Link Item）**：正文在站外，成果记录其站外原文链接。
+- **文档型成果（Document Item）**：正文为一份自包含 HTML 文档（CSS/JS 全部内联、无外部本地资源），上传到本站托管；托管后生成的站内地址即该成果的原文链接。隔离决策记录见 [ADR-0004](docs/adr/0004-hosted-html-csp-sandbox.md)。
 - **成果编号（Item No）**：由数据库主键派生的展示编号，形如 `NO.007`，稳定不随排序变化，像笔记的索引号。
-- **条目公共身份**：一条成果的编号、页面 URL（`/item/:id`）与 OG 封面 URL（`/og/:id.png`）三个派生量，由条目存储单点派生，调用方只读字段不自行推导。
+- **条目公共身份**：一条成果的编号、页面 URL（`/item/:id`）与 OG 封面 URL（`/og/:id.png`）三个派生量，由条目存储单点派生，调用方只读字段不自行推导。文档型成果另有**托管地址**（`/item/:id/doc`）派生，其原文链接即托管地址、不落库。
 - **条目存储（Items Store）**：数据访问与身份派生的深模块（`lib/items-store.js`）。`createItemsStore({ cloud, siteUrl })` 返回 `{ list, find, invalidate }`；60s 缓存、select 列清单、排序、「miss → invalidate → 重查一次」策略、以及日期归一化（`item_date` → `YYYY-MM-DD`）全部收在 interface 后面。`list`/`find` 返回的 item 物化携带派生字段：`no`（NO.007）、`no_num`（编号的数字部分 `007`，供分享海报与文件名）、`date`、`page_url`、`og_image`。决策记录见 [ADR-0001](docs/adr/0001-items-store.md)。
 
 ## 站点形态
