@@ -20,7 +20,7 @@
 - **页面模板（Render）**：服务端渲染的 HTML 生成，纯函数群，位于 `lib/render.js`。视觉见 `assets/style.css`（浅色纸感 + 朱红批注）。
 - **静态资源（Static Files）**：磁盘文件 → HTTP 响应的深模块（`lib/static-files.js`）。`createStaticFiles({ assetsDir, adminTemplate, publicConfigJson })` 返回 `{ tryServeStatic, getAdminHtml }`；mime 表、路径穿越防护（最多三层普通文件名）、字体 immutable / 其余 300s 的缓存策略、admin 模板的 `__PUBLIC_CONFIG__` 替换与缓存全部收在 interface 后面。未命中返回 `false` 且不写字节，怎么 404 由路由层决定。
 - **微信分享卡片**：详情页的 og meta + `/og/:id.png` 封面图（`og-image.js` 实时生成 PNG，不落盘）。
-- **海报排版（Poster Layout）**：分享海报与复制文案的纯逻辑深模块（`assets/poster-layout.js`，挂 `window.PosterLayout`，详情页在 share.js 前加载）。interface 五个成员：`tokenize`（按词/单个 CJK 字符切分）、`wrap(measure, text, maxWidth)`（断行）、`fit(measure, text, maxWidth, opts)`（逐 2px 缩字号 + 省略号回退截断）、`composeText`（文字分享正文：标题/概览/原文链接三段）、`srcLink`（原文链接口径：src 优先、url 兜底）。测量经 `measure(text, fontCss)` 注入，module 不碰 canvas；`assets/share.js` 退为接线壳（canvas 绘制、剪贴板、弹层）。`fit` 循环耗尽时返回 size 低于最后测量字号是钉住的现状（表征测试锁定，修复另议）。测试见 `test/poster-layout.test.js`。
+- **海报排版（Poster Layout）**：分享海报与复制文案的纯逻辑深模块（`assets/poster-layout.js`，挂 `window.PosterLayout`，详情页在 share.js 前加载）。interface 五个成员：`tokenize`（按词/单个 CJK 字符切分）、`wrap(measure, text, maxWidth)`（断行）、`fit(measure, text, maxWidth, opts)`（逐 2px 缩字号 + 省略号回退截断）、`composeText`（文字分享正文：标题/概览/原文链接三段）、`srcLink`（原文链接口径：src 优先、url 兜底）。测量经 `measure(text, fontCss)` 注入，module 不碰 canvas；`assets/share.js` 退为接线壳（canvas 绘制、剪贴板、弹层）。`fit` 返回的 size/lineHeight 始终是最后实际测量的字号（循环耗尽不多减一次，drawPoster 不会拿小号字画大号排版）。测试见 `test/poster-layout.test.js`。
 
 ## 接口与埋点
 
