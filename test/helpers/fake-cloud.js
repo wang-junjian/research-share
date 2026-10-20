@@ -11,11 +11,13 @@
 //                   直连数据库，绕过本进程缓存）
 //   tables          多表行数据（按 from(table) 的表名分槽，未知名自动开空表）
 //   queries         读链计数，断言缓存命中/重查次数
+//   reads           读链记录 [{ table, columns, orders, filters }]，
+//                   供断言 select 列清单与排序
 //   writes          写链记录 [{ table, type, payload|patch, filters, affected }]，
 //                   供断言 payload 形状
-//   error           注入 SDK 的 res.error（每条链 resolve { data:null, error }），
-//                   测 res.error → App.msg 的翻译；置 null 恢复
-//   rejectWith      注入整条链 reject（网络级失败），测 reject 路径的翻译
+//   error           注入 SDK 的 res.error（每条链 resolve { data:null, error }，
+//                   rpc 同此），测 res.error → App.msg 的翻译；置 null 恢复
+//   rejectWith      注入整条链 reject（网络级失败，rpc 同此），测 reject 路径的翻译
 //   silentBlock     模拟 RLS 静默拦截：写链动 0 行、不报 error（data 为 []）
 //
 // 0 行语义：update/delete 经 eq/in 过滤不到行时自然 affected=[]；insert 的
@@ -28,6 +30,7 @@ export function fakeCloud(rows) {
   const state = {
     tables: { research_items: rows },
     queries: 0,
+    reads: [],
     writes: [],
     error: null,
     rejectWith: null,
@@ -53,9 +56,11 @@ export function fakeCloud(rows) {
   function makeBuilder(table) {
     const builder = {
       filters: [],
+      columns: undefined,
+      orders: [],
       op: null, // null=读链 | { type:'insert', payload } | { type:'update', patch } | { type:'delete' }
-      select() { return builder },
-      order() { return builder },
+      select(cols) { builder.columns = cols; return builder },
+      order(col, opts) { builder.orders.push([col, opts]); return builder },
       eq(col, val) { builder.filters.push(['eq', col, val]); return builder },
       in(col, vals) { builder.filters.push(['in', col, vals]); return builder },
       insert(payload) { builder.op = { type: 'insert', payload }; return builder },
@@ -66,6 +71,12 @@ export function fakeCloud(rows) {
         if (state.error) return resolve({ data: null, error: state.error })
         if (!builder.op) {
           state.queries++
+          state.reads.push({
+            table,
+            columns: builder.columns,
+            orders: builder.orders,
+            filters: builder.filters,
+          })
           return resolve({ data: matching(tableRows(table), builder.filters), error: null })
         }
         const op = builder.op
@@ -95,7 +106,9 @@ export function fakeCloud(rows) {
     database: {
       from: (table) => makeBuilder(table),
       rpc: (name, args) => ({
-        then(resolve) {
+        then(resolve, reject) {
+          if (state.rejectWith) return reject && reject(state.rejectWith)
+          if (state.error) return resolve({ data: null, error: state.error })
           const handler = state.rpcHandlers[name]
           return resolve(
             handler
