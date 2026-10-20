@@ -14,3 +14,7 @@
 - `GET /api/items/:id` 从「永远新鲜」变为「60s 内可能陈旧，miss 必重查」。这是刻意接受的语义统一，不要在未来评审中当作疏漏重新提出。
 - `fmtDate` 不再是 render 的导出：日期归一化（`item_date` → `YYYY-MM-DD`）是条目存储的内部细节，render 只对物化的 `date` 字符串做年/月截取。
 - `createAgentApi` 入参从 6 个降到 3 个（`cloud, site, itemsStore`；`site` 即 `{name, url, ...}` 配置对象，健康检查回显用之，不经 store 转手）。
+
+## 相关决策
+
+- [ADR-0005](0005-browser-side-deep-modules.md)：浏览器数据面是本模块在浏览器侧的镜像（select 列清单注释互相点名），登录态门控与共享常量同期收口。

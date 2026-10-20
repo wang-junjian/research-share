@@ -28,3 +28,7 @@
 详情页形态的 product 决策变化：文档型详情页不再内嵌整份文档（iframe 移除），按钮组与链接型完全一致——「查看原文 ↗」直达托管地址。读者与文档的接触面因此只剩托管路由本身，iframe 那道「双保险」随之不复存在，**隔离由托管路由的 `Content-Security-Policy: sandbox allow-scripts` 响应头独力承担**。
 
 这没有削弱实际防护：iframe sandbox 本就只是冗余层（读者新标签直达托管地址时它从不生效，见原决策对「仅靠 iframe sandbox」的拒绝理由），CSP sandbox 随响应头走、顶层打开同样生效，三条残留路径（WAF 规则变动放行、绕过 API 的写入通道、存量内容）依旧被它覆盖。威胁模型与文档不可变约束不变。
+
+## 相关决策
+
+- [ADR-0005](0005-browser-side-deep-modules.md)：浏览器数据面独占文档型成果的 payload 形状（`kind:'doc'` + `doc_html`、`url` 留空），共享常量收口文档字符上限的浏览器预检；两者的源头约束都是本 ADR 的修订一（WAF 写入面收缩）。

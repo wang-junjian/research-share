@@ -47,24 +47,10 @@
     return row.owner_name || '用户 ' + String(row.owner_id).slice(0, 6) + '…'
   }
 
-  /* ---------------- 数据加载 ---------------- */
-  function loadItems() {
-    var q = cloud.database.from('research_items')
-      .select('id, title, summary, url, kind, item_date, owner_id, owner_name, created_at')
-      .order('item_date', { ascending: false })
-      .order('created_at', { ascending: false })
-    return q.then(function (res) {
-      if (res && res.error) throw res.error
-      return res.data || []
-    })
-  }
-
-  function loadAdmins() {
-    return cloud.database.from('admins').select('user_id, added_at, is_founder').then(function (res) {
-      if (res && res.error) throw res.error
-      return res.data || []
-    })
-  }
+  /* ---------------- 数据加载 ----------------
+   * 全部数据访问经浏览器数据面 App.data（GLOSSARY: 浏览器数据面）：
+   * 表名、列清单、res.error 翻译与「写动 0 行即 throw」都收口在那里，
+   * 这里只调用不拼链，catch 后只负责展示（文案已是可读的）。 */
 
   /* ---------------- 渲染 ---------------- */
   function yearOf(row) { return String(row.item_date || '').slice(0, 4) }
@@ -231,7 +217,7 @@
     el.tableEmpty.innerHTML = ''
     el.pageSub.textContent = '加载中…'
 
-    Promise.all([loadItems(), loadAdmins()]).then(function (out) {
+    Promise.all([App.data.listItems(), App.data.listAdmins()]).then(function (out) {
       state.loading = false
       state.allItems = out[0]
       state.adminRows = out[1]
@@ -354,20 +340,8 @@
       }
       saveBtn.disabled = true
       saveBtn.textContent = '保存中…'
-      cloud.database.from('research_items').update(payload).eq('id', row.id).select().then(function (res) {
-        saveBtn.disabled = false
-        saveBtn.textContent = '保存修改'
-        if (res && res.error) {
-          errEl.textContent = App.msg(res.error)
-          errEl.className = 'auth-hint is-error'
-          return
-        }
-        var affected = Array.isArray(res.data) ? res.data : []
-        if (affected.length === 0) {
-          errEl.textContent = '没有改动生效：该成果可能不存在，或你没有权限（仅录入者本人或管理员可修改）。'
-          errEl.className = 'auth-hint is-error'
-          return
-        }
+      // 数据面统一接管 res.error 与「写动 0 行」（RLS 静默拦截），catch 只展示
+      App.data.updateItem(row.id, payload).then(function () {
         m.close()
         App.toast('已保存', 'ok')
         reloadAll()
@@ -388,10 +362,7 @@
       okText: '确认删除'
     }).then(function (ok) {
       if (!ok) return
-      cloud.database.from('research_items').delete().eq('id', row.id).select().then(function (res) {
-        if (res && res.error) { App.toast(App.msg(res.error), 'error'); return }
-        var removed = Array.isArray(res.data) ? res.data : []
-        if (removed.length === 0) { App.toast('删除未生效：仅录入者本人或管理员可删除', 'error'); return }
+      App.data.deleteItem(row.id).then(function () {
         App.toast('已删除', 'ok')
         reloadAll()
       }).catch(function (e) { App.toast(App.msg(e), 'error') })
@@ -407,10 +378,8 @@
       okText: '确认删除 ' + ids.length + ' 条'
     }).then(function (ok) {
       if (!ok) return
-      cloud.database.from('research_items').delete().in('id', ids).select().then(function (res) {
-        if (res && res.error) { App.toast(App.msg(res.error), 'error'); return }
-        var removed = Array.isArray(res.data) ? res.data : []
-        if (removed.length === 0) { App.toast('删除未生效：这些成果不在你的管理范围内', 'error'); return }
+      // 部分无权限：数据面 resolve 实际删除的行，差数在这里报（0 行已被数据面 throw）
+      App.data.deleteItems(ids).then(function (removed) {
         state.selected = {}
         App.toast('已删除 ' + removed.length + ' 条' + (removed.length < ids.length ? '（部分无权限，已跳过）' : ''), 'ok')
         reloadAll()
@@ -420,23 +389,23 @@
 
   function submitNew(e) {
     if (e) e.preventDefault()
-    var payload = {
+    // 与快速分享同一条写路径（App.data.publish）：payload 形状与
+    // owner_name 补全收口在数据面，字段校验与提示文案留在本入口
+    var input = {
       title: el.fTitle.value.trim(),
       summary: el.fSummary.value.trim(),
       url: el.fUrl.value.trim(),
-      item_date: el.fDate.value || App.today(),
-      owner_name: App.auth.nickname()
+      item_date: el.fDate.value || App.today()
     }
-    if (!payload.title || !payload.summary || !payload.url) {
+    if (!input.title || !input.summary || !input.url) {
       App.toast('请填写标题、概览与原文链接', 'error')
       return
     }
     el.btnSave.disabled = true
     el.btnSave.textContent = '保存中…'
-    cloud.database.from('research_items').insert(payload).select().then(function (res) {
+    App.data.publish(input).then(function () {
       el.btnSave.disabled = false
       el.btnSave.textContent = '录入成果'
-      if (res && res.error) { App.toast(App.msg(res.error), 'error'); return }
       App.toast('已录入，公开页面立即可见', 'ok')
       el.fTitle.value = ''
       el.fSummary.value = ''
@@ -454,8 +423,7 @@
   function addAdmin(uid) {
     uid = String(uid || '').trim()
     if (!uid) return
-    cloud.database.from('admins').insert({ user_id: uid }).select().then(function (res) {
-      if (res && res.error) { App.toast(App.msg(res.error), 'error'); return }
+    App.data.addAdmin(uid).then(function () {
       App.toast('已添加为管理员', 'ok')
       reloadAll()
     }).catch(function (e) { App.toast(App.msg(e), 'error') })
@@ -471,10 +439,7 @@
       okText: self ? '确认移除我自己' : '确认移除'
     }).then(function (ok) {
       if (!ok) return
-      cloud.database.from('admins').delete().eq('user_id', uid).select().then(function (res) {
-        if (res && res.error) { App.toast(App.msg(res.error), 'error'); return }
-        var removed = Array.isArray(res.data) ? res.data : []
-        if (removed.length === 0) { App.toast('移除未生效：你可能已不是管理员', 'error'); return }
+      App.data.removeAdmin(uid).then(function () {
         App.toast(self ? '已移除你的管理员权限' : '已移除该管理员', 'ok')
         reloadAll()
       }).catch(function (e) { App.toast(App.msg(e), 'error') })
