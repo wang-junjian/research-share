@@ -1,10 +1,13 @@
 /* ============================================================
  * 研究成果 · 后台「数据看板」页签
  *
- * 数据全部来自一个 RPC：cloud.database.rpc('analytics_dashboard', { p_days })
+ * 数据全部来自一个 RPC：经浏览器数据面 App.data.dashboard 调
+ * analytics_dashboard（GLOSSARY: 浏览器数据面）
  *   —— 服务端进程是 anon 身份，本来就没权限调它；鉴权只在数据库函数里的
  *      is_admin() 一处判定，不会出现「接口层放行了、函数层没拦住」的缝隙。
  *   —— 聚合在库里做，前端只发 1 个请求、只渲染一次（与本站零构建的风格一致）。
+ *   —— rpc 名称/参数、res.error 翻译与 jsonb 字符串兜底都收口在数据面，
+ *      本文件只调用不拼链；「排除本机」的 analytics_exclude 读写同此。
  *
  * 三条贯穿全文件的规矩（对应 DESIGN.md）：
  *   1. 每个百分比旁边都保留绝对数，样本 < 30 一律打「样本少」灰标
@@ -493,10 +496,9 @@
   }
 
   function loadExcl() {
-    return cloud.database.from('analytics_exclude').select('visitor_id, note, created_at')
-      .then(function (res) {
-        if (res && res.error) throw res.error
-        state.excl = res.data || []
+    return App.data.listExclusions()
+      .then(function (rows) {
+        state.excl = rows
         state.exclLoaded = true
       })
       .catch(function () { state.excl = [] })
@@ -518,11 +520,10 @@
   }
 
   function toggleExcl(vid, mine) {
-    var q = mine
-      ? cloud.database.from('analytics_exclude').delete().eq('visitor_id', vid)
-      : cloud.database.from('analytics_exclude').insert({ visitor_id: vid, note: '后台「排除本机」' })
-    q.select().then(function (res) {
-      if (res && res.error) throw res.error
+    // 「排除本机」行为与文案不变（票 #11）：写动经数据面，并发移除的
+    // 0 行是正常终态不抛错（数据面刻意不做 0 行检查，见其注释）
+    var p = mine ? App.data.includeVisitor(vid) : App.data.excludeVisitor(vid, '后台「排除本机」')
+    p.then(function () {
       App.toast(mine ? '已恢复统计本机' : '已把本机排除出统计', 'ok')
       return loadExcl().then(function () { drawExcl(); return load() })
     }).catch(function (e) {
@@ -569,13 +570,8 @@
     state.loading = true
     state.err = ''
     if (!state.data) setStatus('<div class="an-empty"><b>正在读取数据…</b></div>')
-    return cloud.database.rpc('analytics_dashboard', { p_days: state.days }).then(function (res) {
+    return App.data.dashboard(state.days).then(function (d) {
       state.loading = false
-      if (res && res.error) throw res.error
-      var d = res && res.data
-      // SDK 对 jsonb 返回值可能已解好对象，也可能仍是字符串，两种都兜住
-      if (typeof d === 'string') { try { d = JSON.parse(d) } catch (e) { d = null } }
-      if (!d || !d.overview) throw new Error('数据格式不符合预期')
       state.data = d
       setStatus('')
       render()
