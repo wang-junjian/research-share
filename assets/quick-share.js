@@ -11,17 +11,18 @@
  *     链接型填站外原文链接；文档型拖入/选择 .html 文件或粘贴 HTML 源码，
  *     两个入口汇入同一份 HTML 文本，提交前预检「非空、≤ 1MB 字符、不含脚本」——
  *     含 <script>/内联事件属性的文档会被平台边缘 WAF 直接 403，见下方 DOC_BLOCKED）
- *   → 浏览器 SDK 直写 research_items（与 admin 同一条写入路径，绕过本进程；
- *     文档型带 kind:'doc' + doc_html、url 留空，由 db/06 的 CHECK 兜底；
+ *   → 经浏览器数据面 App.data.publish 写入（GLOSSARY: 浏览器数据面：
+ *     payload 形状、owner_name 补全、res.error 翻译与「写动 0 行即抛错」
+ *     全部收口在数据面，这里 catch 后只负责展示；
  *     首页列表的 60s 缓存不受影响——成功态直接带用户去详情页，
  *     而 find 的「miss → invalidate → 重查」保证详情页立即可见）
  *   → 成功态给出「去详情页分享 →」：详情页本就有完整分享条（链接/文字/海报），
  *     文档型在详情页内嵌全文（地基票 #3），分享能力永远与详情页同步，
  *     不在这里维护第二份
  *
- * 无构建步骤：defer 加载，排在 vendor SDK 与 cloud.js 之后，
- * 消费它们挂出的 window.cloud / window.App 与常量脚本挂出的 window.RS_CONST。
- * 任何一步失败静默降级。
+ * 无构建步骤：defer 加载，排在 vendor SDK、cloud.js 与数据面 data.js 之后，
+ * 消费它们挂出的 window.App（authGate / data / 条目公共身份）与常量脚本
+ * 挂出的 window.RS_CONST。任何一步失败静默降级。
  * ============================================================ */
 (function () {
   'use strict'
@@ -48,7 +49,8 @@
     return ''
   }
 
-  if (!window.App || !App.authGate) return
+  // 数据面缺失（data.js 未加载或 cloud 未就绪）同样保持降级：发布链路不可用
+  if (!window.App || !App.authGate || !App.data) return
 
   App.authGate.register({
     mount: '[data-share-entry]',
@@ -172,16 +174,17 @@
     })
 
     el.publish.addEventListener('click', function () {
-      var payload = {
+      // 字段校验与提示文案留在本入口（各入口文案不同，是有意的）；
+      // payload 形状与 owner_name 补全收口在数据面（App.data.publish）
+      var input = {
         title: el.title.value.trim(),
         summary: el.summary.value.trim(),
-        item_date: el.date.value || App.today(),
-        owner_name: user.name || null,
+        item_date: el.date.value || App.today()
       }
       if (kind === 'doc') {
-        // 文档型：kind:'doc' + doc_html 直插，url 留空（不传，走列默认 NULL）
+        // 文档型：两个录入入口汇入的 HTML 文本直传数据面（payload 形状它独占）
         var docHtml = el.source.value
-        if (!payload.title || !payload.summary) { fail('请填写标题与概览'); return }
+        if (!input.title || !input.summary) { fail('请填写标题与概览'); return }
         if (!docHtml.trim()) { fail('文档为空：请拖入 .html 文件或粘贴 HTML 源码'); return }
         if (docHtml.length > DOC_MAX_CHARS) {
           fail('文档超过 1MB 上限（' + docHtml.length.toLocaleString() + ' 字符），请压缩或拆分后分享')
@@ -192,35 +195,30 @@
           fail('文档含' + blocked + '：平台边缘防护会直接拦下这类提交（403），请改成不含脚本的静态 HTML 再分享')
           return
         }
-        payload.kind = 'doc'
-        payload.doc_html = docHtml
+        input.doc_html = docHtml
       } else {
         // 链接型：路径完全不变
-        payload.url = el.url.value.trim()
-        if (!payload.title || !payload.summary || !payload.url) {
+        input.url = el.url.value.trim()
+        if (!input.title || !input.summary || !input.url) {
           fail('请填写标题、概览与原文链接')
           return
         }
       }
       busy(true)
       el.hint.textContent = ''
-      cloud.database.from('research_items').insert(payload).select().then(function (res) {
+      // 数据面对外一律 throw 可读 Error，catch 后只负责展示（hint 元素）
+      App.data.publish(input).then(function (row) {
         busy(false)
-        if (res && res.error) { fail(App.msg(res.error)); return }
-        var row = res && res.data && (Array.isArray(res.data) ? res.data[0] : res.data)
-        var id = row && row.id
-        // 拿不到新 id 就无法直达详情页：退回 toast，让用户去后台确认
-        if (!id) { m.close(); App.toast('已发布，可到后台查看', 'ok'); return }
-        showDone(m, payload, id, user)
+        showDone(m, input.title, row.id, user)
       }).catch(function (err) {
         busy(false)
-        fail(App.msg(err))
+        fail(err.message)
       })
     })
   }
 
   /* ---------------- 成功态：直达详情页分享（A2） ---------------- */
-  function showDone(m, payload, id, user) {
+  function showDone(m, title, id, user) {
     // 编号与详情页路径经 App 的条目公共身份派生（GLOSSARY: 条目公共身份），不自行拼
     var no = App.itemNo(id)
     var pagePath = App.itemPath(id)
@@ -230,7 +228,7 @@
       '<div class="modal-body">' +
       '  <div class="qs-done">' +
       '    <span class="qs-done-no">' + no + '</span>' +
-      '    <div class="qs-done-title">' + App.esc(payload.title) + '</div>' +
+      '    <div class="qs-done-title">' + App.esc(title) + '</div>' +
       '    <div class="qs-done-url">' + App.esc(location.origin + pagePath) + '</div>' +
       '    <p class="qs-done-hint">详情页内含完整分享条：复制链接、复制文字、生成海报。</p>' +
       '  </div>' +

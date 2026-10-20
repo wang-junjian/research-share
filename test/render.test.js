@@ -176,6 +176,19 @@ test('layout 常量脚本先于 quick-share.js：DOC_MAX_CHARS 在 IIFE 顶层�
   assert.ok(iConst < iShare, '常量脚本必须先于 quick-share.js')
 })
 
+test('layout 浏览器数据面 data.js 在 cloud.js 之后、quick-share.js 之前加载', () => {
+  // 数据面依赖 cloud.js 挂出的 window.App / window.cloud（GLOSSARY: 浏览器数据面），
+  // quick-share 的录入写路径消费 App.data.publish——defer 按文档序执行，顺序必须钉死
+  const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
+  const html = layout(authSite, { title: 'T', description: 'D', body: 'B', shareEntry: true })
+  const iCloud = html.indexOf('/assets/cloud.js')
+  const iData = html.indexOf('/assets/data.js')
+  const iShare = html.indexOf('/assets/quick-share.js')
+  assert.ok(iCloud !== -1 && iData !== -1 && iShare !== -1, '三个脚本都应在')
+  assert.ok(iCloud < iData, 'data.js 必须在 cloud.js 之后')
+  assert.ok(iData < iShare, 'data.js 必须在 quick-share.js 之前')
+})
+
 test('layout 有 publicConfigJson 时注入公开配置与登录态脚本', () => {
   const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
   const html = layout(authSite, { title: 'T', description: 'D', body: 'B' })
