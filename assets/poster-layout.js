@@ -6,8 +6,9 @@
  * 测量经 measure(text, fontCss) 注入，本 module 不碰 canvas；
  * share.js 只剩 canvas 绘制、剪贴板与弹层接线。
  *
- * 行为口径与抽出前完全一致（零行为变化重构）——包括 fit 循环耗尽时
- * 「返回 size 低于最后测量字号」的现状（表征测试钉住，修复另议）。
+ * 行为口径与抽出前完全一致（零行为变化重构），除一处已修复的 quirk：
+ * fit 循环耗尽时原先把「多减一次的 size」返回给 drawPoster（拿小号字
+ * 去画按大号排的版），现返回最后实际测量的字号（表征测试同步更新）。
  * 测试见 test/poster-layout.test.js（seam 与 browser-data.test.js 同款）。
  * ============================================================ */
 (function () {
@@ -53,13 +54,17 @@
   }
 
   // 从 startSize 逐 2px 缩字号直到行数达标；仍超则截到 maxLines 行，
-  // 末行逐字回退到能放下省略号。opts = { maxLines, startSize, minSize,
-  // weight, family, lineRatio }；measure(text, fontCss) => width。
+  // 末行逐字回退到能放下省略号。返回的 size/lineHeight 始终是最后实际
+  // 测量的字号（循环耗尽时不会多减一次），调用方拿它去画不会货不对版。
+  // opts = { maxLines, startSize, minSize, weight, family, lineRatio }；
+  // measure(text, fontCss) => width。
   function fit(measure, text, maxWidth, opts) {
     var size = opts.startSize
+    var usedSize = opts.startSize
     var lines = []
     var font = ''
     while (size >= opts.minSize) {
+      usedSize = size
       font = opts.weight + ' ' + size + 'px ' + opts.family
       lines = wrap(function (t) { return measure(t, font) }, text, maxWidth)
       if (lines.length <= opts.maxLines) break
@@ -71,7 +76,7 @@
       while (last.length > 1 && measure(last + '…', font) > maxWidth) last = last.slice(0, -1)
       lines[opts.maxLines - 1] = last + '…'
     }
-    return { lines: lines, size: size, lineHeight: Math.round(size * (opts.lineRatio || 1.42)) }
+    return { lines: lines, size: usedSize, lineHeight: Math.round(usedSize * (opts.lineRatio || 1.42)) }
   }
 
   // 原文链接的单点口径：优先原文地址（src），缺失退回本页链接（url），
