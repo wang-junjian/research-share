@@ -96,26 +96,12 @@
     return Promise.resolve(legacyCopy(text))
   }
 
-  // 原文链接的单点口径：优先原文地址（data-src），缺失时退回本页链接，
-  // 绝不复制出空串。composeText 与「复制原文链接」共用，别各写一份
-  function srcLink() {
-    return data.src || data.url
-  }
-
-  // 「文字 + 原文链接」的正文：标题 / 概览 / 原文链接，三段各占一行。
-  // 「复制海报图 + 原文链接」也复用这段文字 —— 图片写不进去时它就是唯一的载体。
-  function composeText() {
-    var src = srcLink()
-    var label = data.src ? '原文链接' : '本页链接'
-    var lines = []
-    if (data.title) lines.push(data.title)
-    if (data.overview) lines.push(data.overview)
-    lines.push(label + '：' + src)
-    return lines.join('\n')
-  }
+  // 原文链接口径与分享正文口径都收口在海报排版 module（assets/poster-layout.js，
+  // GLOSSARY: 海报排版，先于本脚本加载）：srcLink / composeText 只调用不各写一份
+  var Layout = window.PosterLayout
 
   function copyShareText() {
-    var text = composeText()
+    var text = Layout.composeText(data)
     copyText(text).then(function (ok) {
       if (ok) {
         setNote('文字 + 原文链接已复制，粘贴到微信即可发送', 'ok')
@@ -137,9 +123,9 @@
     })
   }
 
-  // 「复制原文链接」：原始出处地址，口径见 srcLink()
+  // 「复制原文链接」：原始出处地址，口径见 PosterLayout.srcLink
   function copySrcLink() {
-    var src = srcLink()
+    var src = Layout.srcLink(data)
     copyText(src).then(function (ok) {
       if (ok) {
         setNote('原文链接已复制，去微信里粘贴发送即可', 'ok')
@@ -151,70 +137,21 @@
   }
 
   // ---------------- 海报图 ----------------
+  // 排版算法（tokenize / wrap / fit）收口在 PosterLayout，这里只做 canvas 绘制
   var W = 1080
   var H = 1350
-
-  // 按「词 / 单个 CJK 字符」切分，避免把英文单词从中间截断
-  function tokenize(text) {
-    var out = []
-    var buf = ''
-    for (var i = 0; i < text.length; i++) {
-      var ch = text[i]
-      var isWide = /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch)
-      var isSpace = /\s/.test(ch)
-      if (isWide || isSpace) {
-        if (buf) { out.push(buf); buf = '' }
-        out.push(ch)
-      } else {
-        buf += ch
-      }
-    }
-    if (buf) out.push(buf)
-    return out
-  }
-
-  function wrap(ctx, text, maxWidth) {
-    var lines = []
-    var line = ''
-    var tokens = tokenize(String(text).replace(/\s+/g, ' ').trim())
-    for (var i = 0; i < tokens.length; i++) {
-      var t = tokens[i]
-      if (t === ' ' && !line) continue
-      var probe = line + t
-      if (ctx.measureText(probe).width > maxWidth && line) {
-        lines.push(line.replace(/\s+$/, ''))
-        line = t === ' ' ? '' : t
-      } else {
-        line = probe
-      }
-    }
-    if (line.trim()) lines.push(line.replace(/\s+$/, ''))
-    return lines
-  }
-
-  function fit(ctx, text, maxWidth, maxLines, startSize, minSize, weight, family, lineRatio) {
-    var size = startSize
-    var lines = []
-    while (size >= minSize) {
-      ctx.font = weight + ' ' + size + 'px ' + family
-      lines = wrap(ctx, text, maxWidth)
-      if (lines.length <= maxLines) break
-      size -= 2
-    }
-    if (lines.length > maxLines) {
-      lines = lines.slice(0, maxLines)
-      var last = lines[maxLines - 1]
-      while (last.length > 1 && ctx.measureText(last + '…').width > maxWidth) last = last.slice(0, -1)
-      lines[maxLines - 1] = last + '…'
-    }
-    return { lines: lines, size: size, lineHeight: Math.round(size * (lineRatio || 1.42)) }
-  }
 
   function drawPoster() {
     var cv = document.createElement('canvas')
     cv.width = W
     cv.height = H
     var ctx = cv.getContext('2d')
+
+    // 注入排版 module 的测量：给了 fontCss 就先设字体再量（fit 逐字号试排靠这个）
+    var measure = function (t, font) {
+      if (font) ctx.font = font
+      return ctx.measureText(t).width
+    }
 
     var SERIF = "'Instrument Serif', 'Songti SC', 'Noto Serif SC', serif"
     var SANS = "'Archivo', -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif"
@@ -254,12 +191,12 @@
 
     ctx.textBaseline = 'top'
 
-    var titleBlock = fit(ctx, data.title, right - PAD, 4, 62, 36, '400', SERIF, 1.38)
+    var titleBlock = Layout.fit(measure, data.title, right - PAD, { maxLines: 4, startSize: 62, minSize: 36, weight: '400', family: SERIF, lineRatio: 1.38 })
     var titleH = titleBlock.lines.length * titleBlock.lineHeight
 
     var remain = AVAIL_H - titleH - GAP - RULE_H - GAP_AFTER_RULE
     var sumMaxLines = Math.max(3, Math.min(10, Math.floor(remain / (30 * 1.72))))
-    var sumBlock = fit(ctx, data.summary, right - PAD, sumMaxLines, 32, 22, '400', SANS, 1.72)
+    var sumBlock = Layout.fit(measure, data.summary, right - PAD, { maxLines: sumMaxLines, startSize: 32, minSize: 22, weight: '400', family: SANS, lineRatio: 1.72 })
     var sumH = sumBlock.lines.length * sumBlock.lineHeight
 
     var totalH = titleH + GAP + RULE_H + GAP_AFTER_RULE + sumH
