@@ -157,6 +157,25 @@ test('layout 无 publicConfigJson 时不加载登录态脚本', () => {
   assert.doesNotMatch(html, /auth-chip\.js/)
 })
 
+test('layout 无条件加载共享常量脚本，且先于 track.js（defer 按文档序执行）', () => {
+  // 演示模式（无 publicConfigJson）也必须加载：track.js 无条件读 window.RS_CONST
+  const html = layout(site, { title: 'T', description: 'D', body: 'B' })
+  const iConst = html.indexOf('/assets/constants.js')
+  const iTrack = html.indexOf('/assets/track.js')
+  assert.ok(iConst !== -1, '常量脚本缺失')
+  assert.ok(iTrack !== -1, 'track 脚本缺失')
+  assert.ok(iConst < iTrack, '常量脚本必须先于 track.js')
+})
+
+test('layout 常量脚本先于 quick-share.js：DOC_MAX_CHARS 在 IIFE 顶层即读', () => {
+  const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
+  const html = layout(authSite, { title: 'T', description: 'D', body: 'B', shareEntry: true })
+  const iConst = html.indexOf('/assets/constants.js')
+  const iShare = html.indexOf('/assets/quick-share.js')
+  assert.ok(iConst !== -1 && iShare !== -1, '两个脚本都应在')
+  assert.ok(iConst < iShare, '常量脚本必须先于 quick-share.js')
+})
+
 test('layout 有 publicConfigJson 时注入公开配置与登录态脚本', () => {
   const authSite = { ...site, publicConfigJson: '{"endpoint":"https://e.example.com"}' }
   const html = layout(authSite, { title: 'T', description: 'D', body: 'B' })

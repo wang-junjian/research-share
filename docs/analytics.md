@@ -211,7 +211,7 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 | `session_id` | 随机 22 位 | 30 分钟不活动即新建 |
 | `device` / `os` / `browser` | 枚举 | 由 UA 解析，服务端统一做（客户端只负责送 UA） |
 | `ref_kind` | `wechat\|zhihu\|search\|direct\|internal\|other` | 服务端归类，避免客户端口径漂移 |
-| `app_version` | `v2` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比（v2：下线 `change_view_mode`） |
+| `app_version` | `v2` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比（v2：下线 `change_view_mode`）。单一来源在 `lib/constants.js`（共享常量）：客户端与 SSR 同读一处，只改它 |
 | `page` | 路径 | 不含 query，避免把搜索词/令牌带进库 |
 
 ### 5.3 `props` 白名单（防事件表被当垃圾场）

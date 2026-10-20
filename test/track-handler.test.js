@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { createTrack } from '../lib/track.js'
+import { APP_VERSION } from '../lib/constants.js'
 
 // ---------------------------------------------------------------------------
 // createTrack 的 interface 测试：trackServerPageView / handleTrack。
@@ -90,6 +91,8 @@ test('SSR page_view：刻意不带 session_id（否则覆盖率恒为 1），sou
     assert.equal(args.p_ref_kind, 'wechat') // 微信 UA 优先于 referrer 判定
     assert.match(args.p_ip_hash, /^[0-9a-f]{32}$/)
     assert.equal(args.p_is_bot, false)
+    // 口径版本读共享常量单一来源（lib/constants.js），与客户端同版本
+    assert.equal(args.p_app_version, APP_VERSION)
   })
 })
 

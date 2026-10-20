@@ -24,9 +24,10 @@
 (function () {
   'use strict'
 
-  var VERSION = 'v2'                     // 埋点口径版本；改口径必须递增，否则跨版本趋势不可比
-                                         // v2：下线 change_view_mode，select_content 不再带 view_mode
-                                         // （视图切换功能已移除）；lib/track.js 的 SSR 侧版本同步递增
+  // 埋点口径版本读共享常量（GLOSSARY: 共享常量）：/assets/constants.js 由服务端
+  // 单一来源动态生成，公开页布局先于本脚本无条件加载。读不到时 ver 缺省，
+  // 服务端走数据库默认 'v1'，不为此弄坏页面。
+  var VERSION = (window.RS_CONST || {}).APP_VERSION
   var ENDPOINT = '/api/track'
   var MAX_BATCH = 10
   var FLUSH_MS = 3000
