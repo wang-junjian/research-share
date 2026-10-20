@@ -12,7 +12,7 @@
 - **条目存储（Items Store）**：数据访问与身份派生的深模块（`lib/items-store.js`）。`createItemsStore({ cloud, siteUrl })` 返回 `{ list, find, findDocument, invalidate }`；60s 缓存、select 列清单、排序、「miss → invalidate → 重查一次」策略、以及日期归一化（`item_date` → `YYYY-MM-DD`）全部收在 interface 后面。`list`/`find` 返回的 item 物化携带派生字段：`no`（NO.007）、`no_num`（编号的数字部分 `007`，供分享海报与文件名）、`date`、`page_url`、`og_image`、`doc_url`（文档型成果的托管地址，与上述字段同点派生；物化后其 `url` 字段即该地址）。`findDocument` 单行另取文档原文（`doc_html` 不进列表查询）。决策记录见 [ADR-0001](docs/adr/0001-items-store.md)。
 
 - **浏览器数据面（Browser Data）**：浏览器侧数据访问的深模块（`assets/data.js`），挂 `App.data`，在 cloud.js 之后加载。独占表名、select 列清单、`res.error` → `App.msg` 的解包翻译、文档型 payload 形状、以及「写动 0 行即抛错」的 RLS 静默拦截语义；覆盖 `research_items`（listItems/publish/updateItem/deleteItem/deleteItems）、`admins`（listAdmins/addAdmin/removeAdmin）、`analytics_exclude`（listExclusions/excludeVisitor/includeVisitor）与看板 rpc（dashboard），调用方（admin / quick-share / analytics）只调用不拼链，错误一律 catch 后展示。刻意例外：`analytics_exclude` 写动不做 0 行抛错（并发移除的 0 行是正常终态）。与服务端条目存储互为镜像（select 列清单注释互相点名）。决策记录见 [ADR-0005](docs/adr/0005-browser-side-deep-modules.md)。
-- **共享常量（Shared Constants）**：跨服务端/浏览器双写常量的单一来源（`lib/constants.js`，口径版本 `APP_VERSION` 与文档字符上限 `DOC_MAX_CHARS`）。浏览器侧由静态资源模块动态生成 `/assets/constants.js`（挂 `window.RS_CONST`，不落盘、演示模式可用，公开页布局先于 track.js 无条件加载），服务端直接 import；`db/` 迁移与平台边缘 WAF 规则无法由代码生成，维持注释对照。
+- **共享常量（Shared Constants）**：跨服务端/浏览器双写常量的单一来源（`lib/constants.js`，口径版本 `APP_VERSION`、文档字符上限 `DOC_MAX_CHARS` 与「退出统计」键名 `OPTOUT_LS_KEY` / `OPTOUT_COOKIE_KEY`）。浏览器侧由静态资源模块动态生成 `/assets/constants.js`（挂 `window.RS_CONST`，不落盘、演示模式可用，公开页布局先于 track-core.js / track.js 无条件加载），服务端直接 import；`db/` 迁移 CHECK、平台边缘 WAF 规则与 render.js 的退出开关内联脚本（先于 deferred constants.js 执行、读不到 RS_CONST）无法由代码生成，维持注释对照。
 
 ## 站点形态
 
@@ -27,6 +27,7 @@
 - **埋点事件（Track Event）**：匿名访问统计，位于 `lib/track.js`。两条路径：SSR page_view（source='server'，刻意不带 session_id）与浏览器批量上报 `/api/track`（source='client'，永远 204）。客户端 ÷ 服务端 = 埋点覆盖率。
 - **口径版本（ver）**：客户端埋点上报携带的版本号（`assets/track.js` 的 `VERSION`，形如 `v1`；改口径必须递增，否则跨版本趋势不可比）。经 `track_event(p_app_version)` 落进 `research_events.app_version` 列，看板 versions 维度据此分组。格式非法（非 `^v\d{1,8}$`）时服务端不传参，走数据库默认 `'v1'`。迁移见 `db/04-track-event-version.sql`。
 - **访客识别**：UA 解析（device / os / browser / isBot 枚举）与来源归类（wechat / zhihu / search / direct / internal / other）。IP 只存加盐 SHA-256 前 32 位，不落明文。
+- **埋点采集核心（Track Core）**：客户端埋点的纯逻辑深模块（`assets/track-core.js`，挂 `window.TrackCore`）。interface 三个成员：`optedOut`（退出统计判定，键名经参数传入）、`itemIdFromPath`（`/item/:id` 识别）、`createTracker(deps) → { push, flush, visitorId, sessionId, isNewSession }`——访客身份双写对齐、会话 30 分钟 TTL、队列去抖（10 条/3 秒）、payload 组装、optout 重读、sendBeacon→fetch 降级链全部收在闭包里，存储/时钟/随机源/发送通道经参数注入。`assets/track.js` 退为接线壳：页面守卫（/admin、webdriver、optout 早退）、DOM 事件委托、自动事件、`window.RS` 暴露。测试经「预设 window + 顶层 import」seam 直贴 interface（`test/track-core.test.js`）。
 
 ## 身份与登录
 

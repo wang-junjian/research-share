@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { APP_VERSION, DOC_MAX_CHARS } from '../lib/constants.js'
+import { APP_VERSION, DOC_MAX_CHARS, OPTOUT_LS_KEY, OPTOUT_COOKIE_KEY } from '../lib/constants.js'
 import { createStaticFiles } from '../lib/static-files.js'
 
 // ---------------------------------------------------------------------------
@@ -15,9 +15,13 @@ import { createStaticFiles } from '../lib/static-files.js'
 // db/06 的 CHECK 与平台边缘 WAF 规则无法由代码生成，维持注释对照。
 // ---------------------------------------------------------------------------
 
-test('单一来源的值与现网一致：口径版本 v2、文档上限 1000000 字符', () => {
+test('单一来源的值与现网一致：口径版本 v2、文档上限 1000000 字符、optout 键名', () => {
   assert.equal(APP_VERSION, 'v2')
   assert.equal(DOC_MAX_CHARS, 1000000)
+  // render.js 的 OPTOUT_SCRIPT 内联脚本读不到 RS_CONST、维持字面量 + 注释点名，
+  // 这里的期望值就是它要对齐的目标——改键名时两边一起改
+  assert.equal(OPTOUT_LS_KEY, 'rs:optout')
+  assert.equal(OPTOUT_COOKIE_KEY, 'rs_optout')
 })
 
 test('生成的浏览器常量脚本：不落盘也可加载，内容 === 单一来源', async () => {
@@ -43,5 +47,5 @@ test('生成的浏览器常量脚本：不落盘也可加载，内容 === 单一
   // 以浏览器方式执行生成的脚本，挂出的全局必须与来源值逐项相等
   const win = {}
   new Function('window', res.body.toString())(win)
-  assert.deepEqual(win.RS_CONST, { APP_VERSION, DOC_MAX_CHARS })
+  assert.deepEqual(win.RS_CONST, { APP_VERSION, DOC_MAX_CHARS, OPTOUT_LS_KEY, OPTOUT_COOKIE_KEY })
 })

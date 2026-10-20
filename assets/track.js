@@ -1,15 +1,20 @@
 /* ============================================================
- * 研究成果 · 埋点采集（零依赖，约 3KB）
+ * 研究成果 · 埋点采集（接线壳，零依赖）
  *
- * 设计要点
- *  1. 身份匿名：visitor_id 一年期（localStorage + cookie 双写，cookie 供 SSR 侧复用），
- *     session_id 30 分钟不活动即过期（cookie 续期 + sessionStorage 镜像）。
- *  2. 批量上报：最多攒 10 条或 3 秒；pagehide / 切后台时强制 flush。
- *  3. 不上页面关键路径：用 sendBeacon，降级 fetch(keepalive)，失败即丢弃不重试。
+ * 身份 / 队列 / 降级链的纯逻辑已收口到埋点采集核心（assets/track-core.js，
+ * GLOSSARY: 埋点采集核心，先于本脚本加载），本文件只剩三件事：
+ *   1. 页面级守卫：/admin 不统计、自动化浏览器（webdriver）不上报、
+ *      用户已退出统计则整个不启动（身份 cookie 都不写）；
+ *   2. 存储 / 随机源 / 发送通道 adapter 的装配，注入 createTracker；
+ *   3. DOM 事件接线：自动事件、点击委托、错误监听、离开 flush。
+ *
+ * 设计要点：
+ *  1. 批量上报：最多攒 10 条或 3 秒；pagehide / 切后台时强制 flush。
+ *  2. 不上页面关键路径：sendBeacon 优先，降级 fetch(keepalive)，失败即丢弃。
  *     埋点丢几条，远好过让用户多等 200ms。
- *  4. 不采滚动深度、不采停留时长（按约定）。
- *  5. 所有点击类事件都在这里用委托捕获，业务脚本（share.js 等）保持零改动。
- *  6. 任何异常都被吞掉：埋点永远不该弄坏页面。
+ *  3. 不采滚动深度、不采停留时长（按约定）。
+ *  4. 所有点击类事件都在这里用委托捕获，业务脚本（share.js 等）保持零改动。
+ *  5. 任何异常都被吞掉：埋点永远不该弄坏页面。
  *
  * 本文件负责 7 个事件：session_start / page_view / view_item / select_content /
  * outbound_click / share / error。
@@ -24,19 +29,21 @@
 (function () {
   'use strict'
 
-  // 埋点口径版本读共享常量（GLOSSARY: 共享常量）：/assets/constants.js 由服务端
-  // 单一来源动态生成，公开页布局先于本脚本无条件加载。读不到时 ver 缺省，
-  // 服务端走数据库默认 'v1'，不为此弄坏页面。
-  var VERSION = (window.RS_CONST || {}).APP_VERSION
+  // 埋点口径版本与 optout 键名读共享常量（GLOSSARY: 共享常量）：/assets/constants.js
+  // 由服务端单一来源（lib/constants.js）动态生成，公开页布局先于本脚本无条件加载。
+  // 读不到时 ver 缺省（服务端走数据库默认 'v1'，不为此弄坏页面）、键名退回字面量
+  // 兜底——兜底字面量与 lib/constants.js 注释互相点名，正式页面不会走到。
+  var CONST = window.RS_CONST || {}
+  var VERSION = CONST.APP_VERSION
+  var OPTOUT_LS = CONST.OPTOUT_LS_KEY || 'rs:optout'
+  var OPTOUT_COOKIE = CONST.OPTOUT_COOKIE_KEY || 'rs_optout'
   var ENDPOINT = '/api/track'
-  var MAX_BATCH = 10
-  var FLUSH_MS = 3000
-  var SESSION_TTL = 30 * 60 * 1000
-  var YEAR = 365 * 24 * 60 * 60
 
   // 后台管理页不做访客统计；自动化浏览器直接不上报
   if (/^\/admin/.test(location.pathname)) return
   if (navigator.webdriver) return
+
+  var Core = window.TrackCore
 
   function store(fn, fallback) { try { return fn() } catch (e) { return fallback } }
 
@@ -74,109 +81,49 @@
     return s
   }
 
-  // 允许用户退出统计（页脚有「匿名统计 · 可退出」开关）
-  function optedOut() {
-    return store(function () {
-      return localStorage.getItem('rs:optout') === '1' || /(?:^|; )rs_optout=1/.test(document.cookie)
-    }, false)
-  }
-  if (optedOut()) return
-
-  // ---------------- 身份 ----------------
-  var visitorId = cookie('rs_vid') || ls('rs:vid')
-  if (!visitorId) {
-    visitorId = rand()
-    cookie('rs_vid', visitorId, YEAR)
-  }
-  ls('rs:vid', visitorId)
-  cookie('rs_vid', visitorId, YEAR)      // 与 localStorage 对齐，SSR 侧也读得到
-
-  var sessionId = null
-  var lastAt = 0
-  var sidRaw = ss('rs:sid')
-  if (sidRaw) {
-    var parts = sidRaw.split('|')
-    sessionId = parts[0]
-    lastAt = Number(parts[1]) || 0
-  }
-  var isNewSession = !sessionId || !lastAt || (Date.now() - lastAt > SESSION_TTL)
-  if (isNewSession) sessionId = rand()
-  function touchSession() {
-    lastAt = Date.now()
-    ss('rs:sid', sessionId + '|' + lastAt)
-    cookie('rs:sid', sessionId, 1800)
-  }
-  touchSession()
-
-  // ---------------- 队列表 ----------------
-  var queue = []
-  var timer = null
-  var pagesThisSession = {}
+  // 已退出统计则整个不启动：身份 cookie 都不写（与核心抽出前一致）
+  if (Core.optedOut({ ls: ls, cookie: cookie, lsKey: OPTOUT_LS, cookieKey: OPTOUT_COOKIE })) return
 
   function path() {
     return location.pathname.replace(/\/+$/, '') || '/'
   }
 
-  function itemIdFromPath(p) {
-    var m = /^\/item\/(\d+)/.exec(p || '')
-    return m ? Number(m[1]) : null
-  }
+  var currentItem = Core.itemIdFromPath(location.pathname)
 
-  var currentItem = itemIdFromPath(location.pathname)
+  var tracker = Core.createTracker({
+    ls: ls,
+    ss: ss,
+    cookie: cookie,
+    rand: rand,
+    now: function () { return Date.now() },
+    referrer: function () { return document.referrer },
+    version: VERSION,
+    channels: {
+      beacon: navigator.sendBeacon
+        ? function (text) {
+            // text/plain 兼容性最好，服务端按 JSON 解析；不触发预检
+            return navigator.sendBeacon(ENDPOINT, new Blob([text], { type: 'application/json' }))
+          }
+        : null,
+      fetchKeepalive: function (text) {
+        fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: text,
+          keepalive: true,
+        }).catch(function () {})
+      },
+    },
+    optout: { lsKey: OPTOUT_LS, cookieKey: OPTOUT_COOKIE },
+    getPage: path,
+    currentItem: currentItem,
+  })
 
-  function push(name, props, item, page) {
-    try {
-      // 每次入队前重读开关：用户在页脚点了「退出统计」，当前页面立刻生效，不用刷新
-      if (optedOut()) return
-      touchSession()
-      var pg = page || path()
-      pagesThisSession[pg] = 1
-      queue.push({
-        n: name,
-        i: item === undefined ? currentItem : item,
-        p: props || null,
-        pg: pg,
-        t: Date.now(),
-      })
-      if (queue.length >= MAX_BATCH) flush()
-      else if (!timer) timer = setTimeout(flush, FLUSH_MS)
-    } catch (e) {}
-  }
-
-  function payload(events) {
-    var body = { v: visitorId, s: sessionId, ver: VERSION, events: events }
-    if (events.length) body.rf = document.referrer || ''
-    return JSON.stringify(body)
-  }
-
-  function flush() {
-    if (timer) { clearTimeout(timer); timer = null }
-    // 中途退出统计：已入队但还没发出的直接丢掉，不再补发
-    if (optedOut()) { queue = []; return }
-    if (!queue.length) return
-    var events = queue
-    queue = []
-    var text = payload(events)
-    var ok = false
-    try {
-      if (navigator.sendBeacon) {
-        // text/plain 兼容性最好，服务端按 JSON 解析；不触发预检
-        ok = navigator.sendBeacon(ENDPOINT, new Blob([text], { type: 'application/json' }))
-      }
-    } catch (e) { ok = false }
-    if (ok) return
-    try {
-      fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: text,
-        keepalive: true,
-      }).catch(function () {})
-    } catch (e) { /* 埋点失败即丢弃，不重试 */ }
-  }
+  var push = tracker.push
+  var flush = tracker.flush
 
   // ---------------- 自动事件 ----------------
-  if (isNewSession) push('session_start', { landing: path() })
+  if (tracker.isNewSession) push('session_start', { landing: path() })
   push('page_view')
 
   // 详情页：view_item（去抖交给数据库，3 秒内同会话同条目只落一条）
@@ -190,8 +137,8 @@
   window.RS = {
     track: function (name, props, item) { push(name, props, item) },
     flush: flush,
-    visitorId: visitorId,
-    sessionId: sessionId,
+    visitorId: tracker.visitorId,
+    sessionId: tracker.sessionId,
   }
 
   // ---------------- 点击类事件：统一委托 ----------------
