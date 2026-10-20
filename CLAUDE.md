@@ -18,7 +18,7 @@ npm run smoke                          # Agent API 冒烟测试（需要 token�
 
 **单进程 SSR，零前端框架。** `server.js` 是唯一入口，导出 `createHandler({...deps})`：所有依赖（itemsStore、track、agent-api、静态文件、admin 模板）经参数注入，import 本文件不会起服务。测试（`test/server.test.js`）与真实入口共用这一个 handler，改路由时不需要另写集成层。
 
-**模块边界在 `lib/`**：`render.js`（SSR 拼 HTML）、`items-store.js`（内容读写）、`agent-api.js`（`/api/*` 写接口）、`track.js`（埋点上报，`/api/track` 由路由层直接分派给它，不经 agent-api——见 ADR-0001）、`static-files.js`、`demo-cloud.js`（演示模式适配层）、`http.js`（sendJson/sendHtml）、`load-env.js`（极简 .env 加载）。
+**模块边界在 `lib/`**：`render.js`（SSR 拼 HTML）、`items-store.js`（内容读写）、`agent-api.js`（`/api/*` 写接口）、`track.js`（埋点上报，`/api/track` 由路由层直接分派给它，不经 agent-api——见 ADR-0001）、`static-files.js`、`demo-cloud.js`（演示模式适配层）、`http.js`（sendJson/sendHtml）、`load-env.js`（极简 .env 加载）、`constants.js`（共享常量单一来源，`/assets/constants.js` 由 static-files 动态生成——见 GLOSSARY「共享常量」）。
 
 **演示模式是刻意的静默降级**：缺 `CLOUD_ENDPOINT` / `CLOUD_PUBLISHABLE_KEY` 时页面照常 200，只是内容换成 `data/sample-items.json`。所以「接口通了」必须验数据条数，不能只信返回码——`preflight.sh` 就是为这个坑存在的。
 

@@ -11,6 +11,8 @@
 - **条目公共身份**：一条成果的编号、页面 URL（`/item/:id`）与 OG 封面 URL（`/og/:id.png`）三个派生量，由条目存储单点派生，调用方只读字段不自行推导。文档型成果另有**托管地址**（`/item/:id/doc`）派生，其原文链接即托管地址、不落库。浏览器侧（admin / quick-share / analytics 经 SDK 直连数据面，拿不到物化字段）的派生收口在 `assets/cloud.js` 的 `App.itemNo` / `App.itemPath` / `App.docPath` / `App.isDoc`，返回站内路径，消费方只调用不推导，口径与服务端物化一致。
 - **条目存储（Items Store）**：数据访问与身份派生的深模块（`lib/items-store.js`）。`createItemsStore({ cloud, siteUrl })` 返回 `{ list, find, findDocument, invalidate }`；60s 缓存、select 列清单、排序、「miss → invalidate → 重查一次」策略、以及日期归一化（`item_date` → `YYYY-MM-DD`）全部收在 interface 后面。`list`/`find` 返回的 item 物化携带派生字段：`no`（NO.007）、`no_num`（编号的数字部分 `007`，供分享海报与文件名）、`date`、`page_url`、`og_image`、`doc_url`（文档型成果的托管地址，与上述字段同点派生；物化后其 `url` 字段即该地址）。`findDocument` 单行另取文档原文（`doc_html` 不进列表查询）。决策记录见 [ADR-0001](docs/adr/0001-items-store.md)。
 
+- **共享常量（Shared Constants）**：跨服务端/浏览器双写常量的单一来源（`lib/constants.js`，口径版本 `APP_VERSION` 与文档字符上限 `DOC_MAX_CHARS`）。浏览器侧由静态资源模块动态生成 `/assets/constants.js`（挂 `window.RS_CONST`，不落盘、演示模式可用，公开页布局先于 track.js 无条件加载），服务端直接 import；`db/` 迁移与平台边缘 WAF 规则无法由代码生成，维持注释对照。
+
 ## 站点形态
 
 - **演示模式（Demo）**：缺 `CLOUD_ENDPOINT` / `CLOUD_PUBLISHABLE_KEY` 时启用。只读、零依赖，用 `data/sample-items.json` 渲染界面；写操作与埋点全部丢弃。适配器在 `lib/demo-cloud.js`。

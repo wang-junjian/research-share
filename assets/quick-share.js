@@ -19,13 +19,16 @@
  *     不在这里维护第二份
  *
  * 无构建步骤：defer 加载，排在 vendor SDK 与 cloud.js 之后，
- * 消费它们挂出的 window.cloud / window.App。任何一步失败静默降级。
+ * 消费它们挂出的 window.cloud / window.App 与常量脚本挂出的 window.RS_CONST。
+ * 任何一步失败静默降级。
  * ============================================================ */
 (function () {
   'use strict'
 
-  // 与 db/06 的 CHECK 同口径：1MB 按字符数计（char_length）
-  var DOC_MAX_CHARS = 1000000
+  // 文档字符上限读共享常量（GLOSSARY: 共享常量）：/assets/constants.js 由服务端
+  // 单一来源动态生成，公开页布局无条件加载。db/06 的 CHECK 无法由代码生成，
+  // 维持注释对照——同口径，1MB 按字符数计（char_length）。
+  var DOC_MAX_CHARS = (window.RS_CONST || {}).DOC_MAX_CHARS
 
   // 平台边缘 WAF 的 XSS 规则会直接 403 掉含脚本的请求体（返回一张 HTML 拦截页，
   // 不是 JSON），请求根本到不了应用 —— 浏览器直写数据面与 Agent API 两条写入通道
@@ -46,7 +49,7 @@
 
   var entry = document.querySelector('[data-share-entry]')
   if (!entry) return
-  if (!window.App || !App.ready || !window.cloud) return
+  if (!window.App || !App.ready || !window.cloud || !window.RS_CONST) return
 
   cloud.auth.getSession().then(function (res) {
     var user = res && res.data && res.data.user
