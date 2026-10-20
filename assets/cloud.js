@@ -246,6 +246,61 @@
   }
   App.auth = Auth
 
+  /* ---------- 6.5 登录态门控（GLOSSARY: 登录态门控，ADR-0002） ----------
+   * 公开页顶栏挂件的声明式注册：挂件（auth-chip / quick-share）只声明
+   * { mount, render(session, el) }，机制统一读一次会话、把结果填充进
+   * Auth 的 session/user（公开页首次填充，为数据面 owner_name 铺路）、
+   * 逐挂件分发渲染。未登录 / 读会话失败：不动 SSR 输出，静默降级。
+   *
+   * 刻意不做：不调 Auth.start()（OAuth 回调派发是 admin 页的唯一职责，
+   * 公开页 SSR 内联脚本已把带 code 的 / 弹转过去，这里跑 start 会与之
+   * 竞态双换同一个 code）；不引入 onChange 订阅（公开页没有页面内
+   * 登录态变化源）。过期与刷新仍归 SDK getSession（ADR-0002 语义不变）。 */
+  var gateWidgets = []
+  App.authGate = {
+    // 挂件注册：defer 脚本按序执行，全部注册先于 DOMContentLoaded 的运行
+    register: function (decl) {
+      if (decl && decl.mount && typeof decl.render === 'function') gateWidgets.push(decl)
+    },
+
+    // 机制本体：deps 可注入（getSession / resolve / widgets），便于纯判定测试。
+    // 无挂件时不读会话（admin 页注册了零个挂件，会话读取仍只有 bootstrap 那一次）。
+    run: function (deps) {
+      deps = deps || {}
+      var widgets = deps.widgets || gateWidgets
+      if (!widgets.length) return Promise.resolve(null)
+      var getSession = deps.getSession
+      if (!getSession) {
+        if (!App.ready) return Promise.resolve(null)
+        getSession = function () { return cloud.auth.getSession() }
+      }
+      var resolve = deps.resolve || function (sel) { return document.querySelector(sel) }
+
+      return Promise.resolve()
+        .then(getSession)
+        .then(function (res) {
+          var session = res && res.data
+          if (!session || !session.user) return null // 未登录：不动 SSR 输出
+          Auth.session = session
+          Auth.user = session.user
+          widgets.forEach(function (w) {
+            try {
+              var el = resolve(w.mount)
+              if (el) w.render(session, el)
+            } catch (e) { /* 单个挂件失败不影响其余 */ }
+          })
+          return session
+        })
+        .catch(function () { return null }) // 读会话失败视同未登录
+    }
+  }
+
+  // 浏览器里挂触发点：defer 的挂件脚本全部注册完后统一跑一次。
+  // node 测试环境无 document，跳过（测试直接调 run 注入 deps）。
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', function () { App.authGate.run() })
+  }
+
   /* ---------- 7. 登录面板（微信 + WorkBuddy，两者都走平台 Relay） ---------- */
   App.renderLogin = function (mount, opts) {
     opts = opts || {}

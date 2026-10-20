@@ -1,8 +1,9 @@
 /* ============================================================
  * 快速分享入口（顶栏「＋ 分享」）
  *
- * 挂载点 [data-share-entry] 由首页与详情页输出（lib/render.js 的 shareEntry 选项），
- * SSR 默认 hidden：本脚本读到有效会话后才显示 —— 与 auth-chip.js 同款门控，
+ * 本脚本是一份挂件声明（GLOSSARY: 登录态门控）：挂载点 [data-share-entry]
+ * 由首页与详情页输出（lib/render.js 的 shareEntry 选项），SSR 默认 hidden。
+ * 读会话等门控逻辑收在 cloud.js 的 App.authGate，确认已登录才调 render ——
  * 读者永远看不到这个入口。
  *
  * 流程（设计结论见分支 proto/quick-share-entry 的原型，A2 模式）：
@@ -47,17 +48,17 @@
     return ''
   }
 
-  var entry = document.querySelector('[data-share-entry]')
-  if (!entry) return
-  if (!window.App || !App.ready || !window.cloud || !window.RS_CONST) return
+  if (!window.App || !App.authGate) return
 
-  cloud.auth.getSession().then(function (res) {
-    var user = res && res.data && res.data.user
-    if (!user) return // 未登录：入口保持 hidden
-    entry.hidden = false
-    entry.addEventListener('click', function () { openComposer(user) })
-  }).catch(function () {
-    // 读会话失败视同未登录：入口保持 hidden
+  App.authGate.register({
+    mount: '[data-share-entry]',
+    render: function (session, el) {
+      // 常量脚本缺失（RS_CONST 没挂上）时保持 hidden：录入模态依赖 DOC_MAX_CHARS
+      if (!window.RS_CONST) return
+      var user = session.user
+      el.hidden = false
+      el.addEventListener('click', function () { openComposer(user) })
+    }
   })
 
   /* ---------------- 录入模态 ---------------- */

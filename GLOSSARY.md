@@ -32,6 +32,7 @@
 - **登录态**：用户登录后的身份呈现。仅存在于浏览器 localStorage（云服务 SDK 的 SessionStore），服务端不感知身份；公开页顶栏默认渲染「登录」入口，由 `assets/auth-chip.js` 在客户端读会话后替换为头像+用户名。决策记录见 [ADR-0002](docs/adr/0002-auth-state-client-side.md)。
 - **会话（Session）**：云服务 SDK 颁发的 `{accessToken, refreshToken, expiresAt, user}` 合称，存于浏览器 localStorage；过期判断与刷新交给 SDK 的 `getSession()`，业务代码不自实现。
 - **初始管理员（Founder Admin）**：第一个管理员，全站唯一、不可被移除。独占管理员任命权：只有初始管理员能把录入者提升为管理员、把管理员降回录入者。决策记录见 [ADR-0003](docs/adr/0003-founder-admin-exclusive-appoint.md)。
+- **登录态门控（Auth Gate）**：公开页「登录后才出现或替换的顶栏挂件」的声明式注册机制（`assets/cloud.js` 的 `App.authGate`，登录态词条的落地形态）。挂件声明 `{ mount, render(session) }`；读会话一次、填充 Auth 的 session/user、逐挂件分发渲染均由机制统一做，一次页面加载只读一次会话；未登录不动 SSR 输出。机制不调 `Auth.start()`、不碰 OAuth 回调派发（回调的唯一处理者是 admin 页），也不引入 onChange 订阅（公开页没有页面内登录态变化源）。auth-chip 与 quick-share 是挂件。依赖 defer 加载序：挂件脚本须 defer 排在 cloud.js 之后（注册先于 DOMContentLoaded 的统一运行）。admin 页的页面级登录门（showLogin/showAdmin 整页切换）粒度不同，不属于门控机制。决策记录见 [ADR-0002](docs/adr/0002-auth-state-client-side.md)。
 - **管理员**：角色之一，可管理全部研究成果与数据看板；但不能任命或移除管理员（那是初始管理员的独占权限）。
 - **录入者**：角色之一（普通用户），仅能录入、修改与删除自己录入的成果；发布无需审核、直接公开。数据看板对录入者不可见（页签不显示）。
 

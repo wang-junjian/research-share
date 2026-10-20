@@ -1,39 +1,34 @@
 /* ============================================================
- * 公开页顶栏登录态（GLOSSARY: 登录态）
+ * 公开页顶栏登录态（GLOSSARY: 登录态 / 登录态门控）
  *
- * 登录态只存在于浏览器 localStorage（workbuddy-cloud SDK 的 SessionStore），
- * SSR 不感知身份：顶栏默认渲染「登录」链接（lib/render.js 的
- * [data-auth-chip] 挂载点），本脚本在客户端读会话，已登录则替换为
- * 头像+用户名（点击进 /admin）。
+ * 本脚本是一份挂件声明：读会话、未登录不动 SSR 输出等门控逻辑
+ * 收在 cloud.js 的 App.authGate（一次页面加载只读一次会话），
+ * 这里只声明挂载点与「已登录时把顶栏替换为头像+用户名」的渲染。
  *
- * 过期与刷新交给 SDK 的 getSession()；拿不到有效会话就保持默认「登录」。
- * 任何一步失败（SDK 缺失、配置缺失、网络错误）都静默降级，不影响公开页。
+ * 过期与刷新交给 SDK 的 getSession()（门控内部调用，ADR-0002）；
+ * 拿不到有效会话门控不会调 render，顶栏保持 SSR 默认「登录」。
  *
  * 无构建步骤：defer 加载，排在 vendor SDK 与 cloud.js 之后，
- * 消费它们挂出的 window.cloud / window.App。
+ * 消费它们挂出的 window.App。
  * ============================================================ */
 (function () {
   'use strict'
 
-  var nav = document.querySelector('[data-auth-chip]')
-  if (!nav) return
-  if (!window.App || !App.ready || !window.cloud) return
+  if (!window.App || !App.authGate) return
 
-  cloud.auth.getSession().then(function (res) {
-    var session = res && res.data
-    var u = session && session.user
-    if (!u) return
-
-    var name = u.name || '已登录'
-    // 头像缺失时用昵称首字符兜底，与「头像+用户名」的呈现约定一致
-    var avatar = u.avatarUrl
-      ? '<img class="topbar-avatar" alt="" src="' + App.esc(u.avatarUrl) + '">'
-      : '<span class="topbar-avatar topbar-avatar-text" aria-hidden="true">' + App.esc(name.slice(0, 1)) + '</span>'
-    nav.innerHTML =
-      '<a class="topbar-link topbar-user" href="/admin" title="进入后台">' +
-      avatar +
-      '<span>' + App.esc(name) + '</span></a>'
-  }).catch(function () {
-    // 读会话失败视同未登录：顶栏保持默认「登录」入口
+  App.authGate.register({
+    mount: '[data-auth-chip]',
+    render: function (session, nav) {
+      var u = session.user
+      var name = u.name || '已登录'
+      // 头像缺失时用昵称首字符兜底，与「头像+用户名」的呈现约定一致
+      var avatar = u.avatarUrl
+        ? '<img class="topbar-avatar" alt="" src="' + App.esc(u.avatarUrl) + '">'
+        : '<span class="topbar-avatar topbar-avatar-text" aria-hidden="true">' + App.esc(name.slice(0, 1)) + '</span>'
+      nav.innerHTML =
+        '<a class="topbar-link topbar-user" href="/admin" title="进入后台">' +
+        avatar +
+        '<span>' + App.esc(name) + '</span></a>'
+    }
   })
 })()
