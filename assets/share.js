@@ -203,28 +203,11 @@
     ctx.fillStyle = '#C62B38'
     ctx.fillRect(spec.band.x, spec.band.y, spec.band.w, spec.band.h)
 
-    // 红带左栏第一行：部门标签（白描边胶囊 + 白字，红带上的「印章位」；
-    // 旧 webview 无 roundRect 时退化为方角描边）
-    var tag = spec.dept
-    ctx.strokeStyle = '#FFFFFF'
-    ctx.lineWidth = 2
-    if (typeof ctx.roundRect === 'function') {
-      ctx.beginPath()
-      ctx.roundRect(tag.x, tag.y, tag.w, tag.h, tag.h / 2)
-      ctx.stroke()
-    } else {
-      ctx.strokeRect(tag.x, tag.y, tag.w, tag.h)
-    }
+    // 红带左栏三行纯文字层级：部门署名（最大最粗）/ 日期·作者 / 长按识别引导
     ctx.fillStyle = '#FFFFFF'
-    ctx.font = '500 ' + tag.size + 'px ' + SANS
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(tag.text, tag.x + tag.w / 2, tag.y + tag.h / 2 + 1)
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'alphabetic'
+    ctx.font = '600 ' + spec.dept.size + 'px ' + SANS
+    ctx.fillText(spec.dept.text, spec.dept.x, spec.dept.y)
 
-    // 红带左栏第二行：日期 · 作者
-    ctx.fillStyle = '#FFFFFF'
     ctx.font = '500 ' + spec.meta.size + 'px ' + SANS
     ctx.fillText(spec.meta.text, spec.meta.x, spec.meta.y)
 
