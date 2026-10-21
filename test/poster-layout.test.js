@@ -104,3 +104,68 @@ test('srcLink：原文地址优先，缺失退回本页链接', () => {
   assert.equal(PosterLayout.srcLink({ src: 's', url: 'u' }), 's')
   assert.equal(PosterLayout.srcLink({ src: '', url: 'u' }), 'u')
 })
+
+// ---------------------------------------------------------------------------
+// posterSpec：整版版面决策（GLOSSARY: 海报排版）。期望值按常量手算：
+// W=1080 H=1350 PAD=104，红带高 340（y=1010 起到下缘满版），
+// 白卡 300×300（x=676,y=1030），码区 240×240（x=706,y=1060，白卡内缩 30）。
+// 内容区 y∈[290, 962] 垂直居中；标题 72→40px serif、概览 32→22px sans。
+// ---------------------------------------------------------------------------
+
+const DATA = {
+  no: '042', title: '一'.repeat(20), summary: '一'.repeat(40),
+  date: '2026-10-21', by: '甲', url: 'https://research-share.app.workbuddy.host/item/42',
+  src: 'https://example.com/original',
+}
+
+test('posterSpec：刊头是编号 + 域名（域名取 data.url 的 host）', () => {
+  const spec = PosterLayout.posterSpec(halfEm, DATA)
+  assert.equal(spec.masthead.no, 'NO.042')
+  assert.equal(spec.masthead.host, 'research-share.app.workbuddy.host')
+  assert.equal(spec.masthead.y, 168)
+  assert.equal(spec.masthead.size, 26)
+  assert.equal(spec.pad, 104, '页边距显式导出，调用方不反推')
+  assert.deepEqual(spec.rule, { x: 104, y: 200, w: 108, h: 5 })
+})
+
+test('posterSpec：红带满版出血，二维码白卡居右、码区内缩', () => {
+  const spec = PosterLayout.posterSpec(halfEm, DATA)
+  assert.deepEqual(spec.band, { x: 0, y: 1010, w: 1080, h: 340 })
+  assert.deepEqual(spec.qrCard, { x: 676, y: 1030, size: 300 })
+  assert.deepEqual(spec.qr, { x: 706, y: 1060, size: 240 })
+})
+
+test('posterSpec：红带左侧两行白字——日期·作者 / 长按识别 · 阅读原文', () => {
+  const spec = PosterLayout.posterSpec(halfEm, DATA)
+  assert.equal(spec.meta.text, '2026-10-21  ·  甲')
+  assert.equal(spec.meta.x, 104)
+  assert.equal(spec.meta.y, 1010 + 150)
+  assert.equal(spec.meta.size, 30)
+  assert.equal(spec.qrHint.text, '长按识别 · 阅读原文')
+  assert.equal(spec.qrHint.x, 104)
+  assert.equal(spec.qrHint.y, 1010 + 205)
+  assert.equal(spec.qrHint.size, 26)
+})
+
+test('posterSpec：标题与概览居中于内容区，不侵入红带', () => {
+  const spec = PosterLayout.posterSpec(halfEm, DATA)
+  // halfEm：标题 20 字在 72px 下每行 floor(872/36)=24 字 → 1 行，不缩字号
+  assert.equal(spec.title.size, 72)
+  assert.deepEqual(spec.title.lines, ['一'.repeat(20)])
+  assert.equal(spec.title.lineHeight, Math.round(72 * 1.38))
+  // 概览 40 字在 32px 下每行 floor(872/16)=54 字 → 1 行
+  assert.equal(spec.summary.size, 32)
+  assert.deepEqual(spec.summary.lines, ['一'.repeat(40)])
+  // 垂直居中：totalH = 99+56+2+36+55 = 248，y0 = 290 + (672-248)/2 = 502
+  assert.equal(spec.title.y, 502)
+  assert.equal(spec.divider.y, 502 + 99 + 56)
+  assert.equal(spec.summary.y, 502 + 99 + 56 + 2 + 36)
+  const summaryBottom = spec.summary.y + spec.summary.lineHeight
+  assert.ok(summaryBottom <= 962, '内容区下缘不越过红带')
+})
+
+test('posterSpec：src 走 srcLink 口径（src 优先、url 兜底）', () => {
+  assert.equal(PosterLayout.posterSpec(halfEm, DATA).src, 'https://example.com/original')
+  const docType = Object.assign({}, DATA, { src: '' })
+  assert.equal(PosterLayout.posterSpec(halfEm, docType).src, DATA.url)
+})

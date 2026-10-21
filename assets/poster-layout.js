@@ -85,6 +85,70 @@
     return d.src || d.url
   }
 
+  // data.url 的 host 做刊头域名；解析失败退回原文串（与抽出前 share.js 同款）
+  function hostOf(url) {
+    try { return new URL(url).host } catch (e) { return url }
+  }
+
+  // -----------------------------------------------------------------------
+  // 整版版面决策（概念①「红底对撞」）：刊头（编号 + 域名）/ 朱红短线 /
+  // 标题 + 概览垂直居中 / 底部满版朱红带（左：日期·作者、长按识别引导；
+  // 右：二维码白卡）。坐标、字号、行数全部在这里算好（含刊头与红带文字的
+  // 固定字号），drawPoster 只照着画；页边距经 pad 导出，调用方不反推。
+  // fonts = { serif, sans } 由调用方注入（测试传占位串）。
+  // -----------------------------------------------------------------------
+  var W = 1080
+  var H = 1350
+  var PAD = 104
+  var BAND_H = 340
+  var CARD = 300
+  var CARD_INSET = 30
+
+  function posterSpec(measure, d, fonts) {
+    fonts = fonts || {}
+    var serif = fonts.serif || 'serif'
+    var sans = fonts.sans || 'sans-serif'
+    var right = W - PAD
+    var bandY = H - BAND_H
+
+    // 内容区：朱红短线之下、红带之上，垂直居中
+    var AVAIL_TOP = 290
+    var AVAIL_H = bandY - AVAIL_TOP - 48
+    var GAP = 56
+    var RULE_H = 2
+    var GAP_AFTER_RULE = 36
+
+    var title = fit(measure, d.title, right - PAD, { maxLines: 4, startSize: 72, minSize: 40, weight: '400', family: serif, lineRatio: 1.38 })
+    var titleH = title.lines.length * title.lineHeight
+
+    var remain = AVAIL_H - titleH - GAP - RULE_H - GAP_AFTER_RULE
+    var sumMaxLines = Math.max(3, Math.min(8, Math.floor(remain / (32 * 1.72))))
+    var summary = fit(measure, d.summary, right - PAD, { maxLines: sumMaxLines, startSize: 32, minSize: 22, weight: '400', family: sans, lineRatio: 1.72 })
+    var sumH = summary.lines.length * summary.lineHeight
+
+    var totalH = titleH + GAP + RULE_H + GAP_AFTER_RULE + sumH
+    var y = AVAIL_TOP + Math.max(0, Math.round((AVAIL_H - totalH) / 2))
+
+    return {
+      W: W, H: H, pad: PAD,
+      masthead: {
+        no: d.no ? 'NO.' + d.no : '',
+        host: hostOf(d.url),
+        y: 168, size: 26,
+      },
+      rule: { x: PAD, y: 200, w: 108, h: 5 },
+      title: { lines: title.lines, size: title.size, lineHeight: title.lineHeight, x: PAD, y: y },
+      divider: { x: PAD, y: y + titleH + GAP, w: right - PAD, h: RULE_H },
+      summary: { lines: summary.lines, size: summary.size, lineHeight: summary.lineHeight, x: PAD, y: y + titleH + GAP + RULE_H + GAP_AFTER_RULE },
+      band: { x: 0, y: bandY, w: W, h: BAND_H },
+      meta: { text: [d.date, d.by].filter(Boolean).join('  ·  '), x: PAD, y: bandY + 150, size: 30 },
+      qrHint: { text: '长按识别 · 阅读原文', x: PAD, y: bandY + 205, size: 26 },
+      qrCard: { x: W - PAD - CARD, y: bandY + (BAND_H - CARD) / 2, size: CARD },
+      qr: { x: W - PAD - CARD + CARD_INSET, y: bandY + (BAND_H - CARD) / 2 + CARD_INSET, size: CARD - CARD_INSET * 2 },
+      src: srcLink(d),
+    }
+  }
+
   // 「文字 + 原文链接」的正文：标题 / 概览 / 原文链接，三段各占一行。
   // 「复制海报图 + 原文链接」也复用这段文字 —— 图片写不进去时它就是唯一的载体。
   function composeText(d) {
@@ -101,6 +165,7 @@
     tokenize: tokenize,
     wrap: wrap,
     fit: fit,
+    posterSpec: posterSpec,
     composeText: composeText,
     srcLink: srcLink,
   }
