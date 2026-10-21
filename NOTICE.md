@@ -21,6 +21,13 @@
 
 两者均来自 Google Fonts。OFL 允许自由使用、修改与再分发，包括随软件一起打包。
 
-## 3. `data/sample-items.json`
+## 3. `assets/vendor/qrcode.js`
+
+- 来源：[`qrcode-generator`](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4，作者 Kazuhiko Arase
+- 许可：MIT（`http://www.opensource.org/licenses/mit-license.php`）
+
+分享海报右下角二维码的编码器（浏览器端生成模块矩阵，绘制在 `assets/qr.js`）。自托管而不从 CDN 加载，理由同第 1 节。MIT 许可允许随软件再分发，保留文件头部的版权声明即可。
+
+## 4. `data/sample-items.json`
 
 演示模式的示例数据，全部为虚构内容（标题、摘要、链接均指向 `example.com`），用于让 `npm start` 之后界面有东西可渲染。可以随意删除或替换。

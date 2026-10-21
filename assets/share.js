@@ -137,14 +137,10 @@
   }
 
   // ---------------- 海报图 ----------------
-  // 排版算法（tokenize / wrap / fit）收口在 PosterLayout，这里只做 canvas 绘制
-  var W = 1080
-  var H = 1350
-
+  // 版面决策（坐标/字号/红带几何/二维码卡位）收口在 PosterLayout.posterSpec，
+  // 二维码矩阵与绘制收口在 window.QR；这里只剩调色与照着 spec 画
   function drawPoster() {
     var cv = document.createElement('canvas')
-    cv.width = W
-    cv.height = H
     var ctx = cv.getContext('2d')
 
     // 注入排版 module 的测量：给了 fontCss 就先设字体再量（fit 逐字号试排靠这个）
@@ -156,97 +152,77 @@
     var SERIF = "'Instrument Serif', 'Songti SC', 'Noto Serif SC', serif"
     var SANS = "'Archivo', -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif"
 
+    var spec = Layout.posterSpec(measure, data, { serif: SERIF, sans: SANS })
+    cv.width = spec.W
+    cv.height = spec.H
+
     // 暖白纸底
     ctx.fillStyle = '#FAF9F7'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillRect(0, 0, spec.W, spec.H)
 
-    // 外框
-    ctx.strokeStyle = '#E0DDD8'
-    ctx.lineWidth = 2
-    ctx.strokeRect(48, 48, W - 96, H - 96)
-
-    var PAD = 104
-    var right = W - PAD
-
-    // 顶部编号与站名
+    // 顶部刊头：编号（左）· 域名（右）
     ctx.textBaseline = 'alphabetic'
     ctx.fillStyle = '#6E6B66'
-    ctx.font = '500 26px ' + SANS
-    var noText = data.no ? 'NO.' + data.no : ''
-    ctx.fillText(noText, PAD, 168)
+    ctx.font = '500 ' + spec.masthead.size + 'px ' + SANS
+    ctx.fillText(spec.masthead.no, spec.pad, spec.masthead.y)
     ctx.textAlign = 'right'
-    ctx.fillText('RESEARCH NOTES', right, 168)
+    ctx.fillText(spec.masthead.host, spec.W - spec.pad, spec.masthead.y)
     ctx.textAlign = 'left'
 
     // 朱红短线，和 OG 封面同一套语言
     ctx.fillStyle = '#C62B38'
-    ctx.fillRect(PAD, 200, 108, 5)
-
-    // 内容区（标题 + 概览）垂直居中，避免中部留白
-    var AVAIL_TOP = 290
-    var AVAIL_H = 830
-    var GAP = 56
-    var RULE_H = 2
-    var GAP_AFTER_RULE = 36
+    ctx.fillRect(spec.rule.x, spec.rule.y, spec.rule.w, spec.rule.h)
 
     ctx.textBaseline = 'top'
 
-    var titleBlock = Layout.fit(measure, data.title, right - PAD, { maxLines: 4, startSize: 62, minSize: 36, weight: '400', family: SERIF, lineRatio: 1.38 })
-    var titleH = titleBlock.lines.length * titleBlock.lineHeight
-
-    var remain = AVAIL_H - titleH - GAP - RULE_H - GAP_AFTER_RULE
-    var sumMaxLines = Math.max(3, Math.min(10, Math.floor(remain / (30 * 1.72))))
-    var sumBlock = Layout.fit(measure, data.summary, right - PAD, { maxLines: sumMaxLines, startSize: 32, minSize: 22, weight: '400', family: SANS, lineRatio: 1.72 })
-    var sumH = sumBlock.lines.length * sumBlock.lineHeight
-
-    var totalH = titleH + GAP + RULE_H + GAP_AFTER_RULE + sumH
-    var y = AVAIL_TOP + Math.max(0, Math.round((AVAIL_H - totalH) / 2))
-
     // 标题
     ctx.fillStyle = '#1A1A1A'
-    ctx.font = '400 ' + titleBlock.size + 'px ' + SERIF
-    for (var i = 0; i < titleBlock.lines.length; i++) {
-      ctx.fillText(titleBlock.lines[i], PAD, y)
-      y += titleBlock.lineHeight
+    ctx.font = '400 ' + spec.title.size + 'px ' + SERIF
+    var y = spec.title.y
+    for (var i = 0; i < spec.title.lines.length; i++) {
+      ctx.fillText(spec.title.lines[i], spec.title.x, y)
+      y += spec.title.lineHeight
     }
 
     // 分隔线
-    y += GAP
     ctx.fillStyle = '#E0DDD8'
-    ctx.fillRect(PAD, y, right - PAD, RULE_H)
-    y += RULE_H + GAP_AFTER_RULE
+    ctx.fillRect(spec.divider.x, spec.divider.y, spec.divider.w, spec.divider.h)
 
     // 概览
     ctx.fillStyle = '#4B4945'
-    ctx.font = '400 ' + sumBlock.size + 'px ' + SANS
-    for (var j = 0; j < sumBlock.lines.length; j++) {
-      ctx.fillText(sumBlock.lines[j], PAD, y)
-      y += sumBlock.lineHeight
+    ctx.font = '400 ' + spec.summary.size + 'px ' + SANS
+    y = spec.summary.y
+    for (var j = 0; j < spec.summary.lines.length; j++) {
+      ctx.fillText(spec.summary.lines[j], spec.summary.x, y)
+      y += spec.summary.lineHeight
     }
 
     ctx.textBaseline = 'alphabetic'
 
-    // 底部：日期 · 作者 / 域名
-    var footY = H - 140
-    ctx.fillStyle = '#E0DDD8'
-    ctx.fillRect(PAD, footY - 58, right - PAD, 2)
-
-    // 页边批注竖条（与 OG 封面同一母题），不与文字重叠
+    // 底部满版朱红带（出血到下缘与两缘）
     ctx.fillStyle = '#C62B38'
-    ctx.fillRect(PAD, footY - 44, 4, 56)
+    ctx.fillRect(spec.band.x, spec.band.y, spec.band.w, spec.band.h)
 
-    ctx.fillStyle = '#1A1A1A'
-    ctx.font = '500 30px ' + SANS
-    var meta = [data.date, data.by].filter(Boolean).join('  ·  ')
-    ctx.fillText(meta, PAD + 26, footY)
+    // 红带左栏：日期 · 作者
+    ctx.fillStyle = '#FFFFFF'
+    ctx.font = '500 ' + spec.meta.size + 'px ' + SANS
+    ctx.fillText(spec.meta.text, spec.meta.x, spec.meta.y)
 
-    ctx.fillStyle = '#6E6B66'
-    ctx.font = '400 26px ' + SANS
-    var host = ''
-    try { host = new URL(data.url).host } catch (e) { host = data.url }
-    ctx.textAlign = 'right'
-    ctx.fillText(host, right, footY)
-    ctx.textAlign = 'left'
+    // 二维码：库缺失或编码失败时跳过卡与提示，海报其余部分照常
+    var qrMatrix = null
+    try { qrMatrix = window.QR.matrix(spec.src) } catch (e) { qrMatrix = null }
+    if (qrMatrix) {
+      ctx.fillStyle = '#FFFFFF'
+      ctx.font = '400 ' + spec.qrHint.size + 'px ' + SANS
+      ctx.fillText(spec.qrHint.text, spec.qrHint.x, spec.qrHint.y)
+
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(spec.qrCard.x, spec.qrCard.y, spec.qrCard.size, spec.qrCard.size)
+      window.QR.draw(ctx, qrMatrix, {
+        x: spec.qr.x, y: spec.qr.y, size: spec.qr.size,
+        dark: '#1A1A1A', finder: '#C62B38',
+      })
+    }
 
     return cv
   }
