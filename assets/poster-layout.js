@@ -92,10 +92,11 @@
 
   // -----------------------------------------------------------------------
   // 整版版面决策（概念①「红底对撞」）：刊头（编号 + 域名）/ 朱红短线 /
-  // 标题 + 概览垂直居中 / 底部满版朱红带（左：部门标签胶囊、日期·作者、
-  // 长按识别引导；右：二维码白卡）。坐标、字号、行数全部在这里算好（含
-  // 刊头与红带文字的固定字号），drawPoster 只照着画；页边距经 pad 导出，
-  // 调用方不反推。fonts = { serif, sans } 由调用方注入（测试传占位串）。
+  // 标题 + 概览垂直居中 / 底部满版朱红带（左栏纯文字三行层级：部门署名、
+  // 日期·作者、长按识别引导；右：二维码白卡）。坐标、字号、行数全部在这里
+  // 算好（含刊头与红带文字的固定字号），drawPoster 只照着画；页边距经
+  // pad 导出，调用方不反推。fonts = { serif, sans } 由调用方注入（测试传
+  // 占位串）。
   // -----------------------------------------------------------------------
   var W = 1080
   var H = 1350
@@ -103,15 +104,8 @@
   var BAND_H = 340
   var CARD = 300
   var CARD_INSET = 30
-  // 部门署名：站点级常量，红带左栏的「印章位」；要可配时再提升为共享常量
+  // 部门署名：站点级常量，红带左栏最大最粗的一行；要可配时再提升为共享常量
   var DEPT = '研发中心'
-
-  // 部门标签胶囊：宽度随文案测量派生（左右内边距 18，圆角由调用方按 h/2 画成胶囊）
-  function deptTag(measure, sans, bandY) {
-    var size = 22
-    var w = Math.ceil(measure(DEPT, '500 ' + size + 'px ' + sans)) + 18 * 2
-    return { text: DEPT, x: PAD, y: bandY + 56, w: w, h: 44, size: size }
-  }
 
   function posterSpec(measure, d, fonts) {
     fonts = fonts || {}
@@ -150,9 +144,9 @@
       divider: { x: PAD, y: y + titleH + GAP, w: right - PAD, h: RULE_H },
       summary: { lines: summary.lines, size: summary.size, lineHeight: summary.lineHeight, x: PAD, y: y + titleH + GAP + RULE_H + GAP_AFTER_RULE },
       band: { x: 0, y: bandY, w: W, h: BAND_H },
-      dept: deptTag(measure, sans, bandY),
-      meta: { text: [d.date, d.by].filter(Boolean).join('  ·  '), x: PAD, y: bandY + 176, size: 30 },
-      qrHint: { text: '长按识别 · 阅读原文', x: PAD, y: bandY + 231, size: 26 },
+      dept: { text: DEPT, x: PAD, y: bandY + 118, size: 34 },
+      meta: { text: [d.date, d.by].filter(Boolean).join('  ·  '), x: PAD, y: bandY + 182, size: 30 },
+      qrHint: { text: '长按识别 · 阅读原文', x: PAD, y: bandY + 237, size: 26 },
       qrCard: { x: W - PAD - CARD, y: bandY + (BAND_H - CARD) / 2, size: CARD },
       qr: { x: W - PAD - CARD + CARD_INSET, y: bandY + (BAND_H - CARD) / 2 + CARD_INSET, size: CARD - CARD_INSET * 2 },
       src: srcLink(d),
