@@ -135,15 +135,23 @@ test('posterSpec：红带满版出血，二维码白卡居右、码区内缩', (
   assert.deepEqual(spec.qr, { x: 706, y: 1060, size: 240 })
 })
 
-test('posterSpec：红带左侧两行白字——日期·作者 / 长按识别 · 阅读原文', () => {
+test('posterSpec：红带左侧三行——部门标签胶囊 / 日期·作者 / 长按识别', () => {
   const spec = PosterLayout.posterSpec(halfEm, DATA)
+  // 部门标签：站点级署名常量「研发中心」，胶囊几何由文案宽度派生
+  // halfEm：4 字 × 22px × 0.5 = 44，加左右内边距 18×2 → w=80
+  assert.equal(spec.dept.text, '研发中心')
+  assert.equal(spec.dept.size, 22)
+  assert.deepEqual(
+    { x: spec.dept.x, y: spec.dept.y, w: spec.dept.w, h: spec.dept.h },
+    { x: 104, y: 1010 + 56, w: 80, h: 44 },
+  )
   assert.equal(spec.meta.text, '2026-10-21  ·  甲')
   assert.equal(spec.meta.x, 104)
-  assert.equal(spec.meta.y, 1010 + 150)
+  assert.equal(spec.meta.y, 1010 + 176)
   assert.equal(spec.meta.size, 30)
   assert.equal(spec.qrHint.text, '长按识别 · 阅读原文')
   assert.equal(spec.qrHint.x, 104)
-  assert.equal(spec.qrHint.y, 1010 + 205)
+  assert.equal(spec.qrHint.y, 1010 + 231)
   assert.equal(spec.qrHint.size, 26)
 })
 
