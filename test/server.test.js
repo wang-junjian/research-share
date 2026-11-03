@@ -90,7 +90,7 @@ const RAW = {
 
 const site = { name: '研究成果', desc: 'd', url: 'https://x.com', favicon: 'data:image/svg+xml,x' }
 
-async function withServer(rows, fn, { trackServerPageView = () => {} } = {}) {
+async function withServer(rows, fn, { trackServerPageView = () => {}, getHealth } = {}) {
   const cloud = fakeCloud(rows)
   const itemsStore = createItemsStore({ cloud, siteUrl: site.url })
   const { handleApi } = createAgentApi({ cloud, site, itemsStore })
@@ -105,6 +105,7 @@ async function withServer(rows, fn, { trackServerPageView = () => {} } = {}) {
     handleApi,
     getAdminHtml: async () => '<html>admin</html>',
     tryServeStatic: async () => false,
+    getHealth,
   })
   const server = http.createServer(handler)
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
@@ -148,6 +149,24 @@ test('POST /api/track 由路由层直接分派给 track module（永远 204）',
     })
     assert.equal(res.status, 204)
   })
+})
+
+test('GET /__health 分派给注入的探针，query 一并传下去且禁止缓存', async () => {
+  let seenPath = null
+  await withServer([], async (base) => {
+    const res = await fetch(`${base}/__health?token=t1`)
+    assert.equal(res.status, 200)
+    // 探针结果随时会变（dns 探测可能刚落定），不能让中间层缓存
+    assert.equal(res.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(await res.json(), { ok: true, seen: 't1' })
+  }, {
+    getHealth: (url) => {
+      seenPath = url.pathname
+      return { ok: true, seen: url.searchParams.get('token') }
+    },
+  })
+  // 传下去的是解析后的 URL 对象，详情档才能自己取 ?token=
+  assert.equal(seenPath, '/__health')
 })
 
 test('GET /api/items 经真实 agent-api + items-store 返回物化字段', async () => {

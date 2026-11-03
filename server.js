@@ -1,4 +1,5 @@
 import http from 'node:http'
+import dns from 'node:dns/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createWorkBuddyCloud } from '@tencent-ai/workbuddy-cloud-sdk'
 import { drawCover } from './og-image.js'
@@ -12,11 +13,128 @@ import { createStaticFiles } from './lib/static-files.js'
 import { sendJson, sendHtml, CORS_HEADERS } from './lib/http.js'
 
 // ---------------------------------------------------------------------------
+// 错误描述：线上 500 只看到 `TypeError: fetch failed` 是这个项目的老坑。
+// 原因有两层：
+//   1. undici 把 DNS / 连接超时 / TLS 全包成一个 `TypeError: fetch failed`；
+//   2. 云服务 SDK 又把它重包成 `{ message, details, hint, code }`，`message`
+//      只剩第一行，底层原因（`getaddrinfo ENOTFOUND`、`connect ETIMEDOUT`）
+//      只留在 `details` 里，而且**没有 `cause`** —— 只遍历 cause 链会扑空。
+// 所以这里同时展开 cause 链与 details，产出可直接判读的一行日志。
+// ---------------------------------------------------------------------------
+export function describeError(err) {
+  const chain = []
+  let details = ''
+  let cur = err
+  let depth = 0
+  // 上限 5 层：正常 cause 链 1~2 层，防环状引用把日志打爆
+  while (cur && depth < 5) {
+    const head = [cur.name, cur.message].filter(Boolean).join(': ')
+    const extra = []
+    for (const k of ['code', 'errno', 'syscall', 'address', 'port', 'hostname']) {
+      if (cur[k] !== undefined && cur[k] !== '') extra.push(`${k}=${cur[k]}`)
+    }
+    if (head || extra.length) chain.push(extra.length ? `${head} (${extra.join(' ')})` : head)
+    // SDK 包装层的底层原因（含 Caused by 段），只取最外层一份
+    if (!details && typeof cur.details === 'string' && cur.details) details = cur.details
+    cur = cur.cause
+    depth++
+  }
+  let out = chain.join(' <- ')
+  if (details) {
+    // 去掉缩进的 stack 帧，压成单行：日志按行 grep 时不会被冲散
+    const flat = details.split('\n').map((s) => s.trim())
+      .filter((s) => s && !s.startsWith('at ')).join(' | ')
+    if (flat) out += ` ‖ details: ${flat}`
+  }
+  if (!out && err) out = String(err)
+  return out.length > 1200 ? out.slice(0, 1200) + '…' : out
+}
+
+// ---------------------------------------------------------------------------
+// 启动自检：数据面域名的 DNS 可达性。
+//
+// 线上出现过「整站 500、日志只有 fetch failed」的故障，根因是容器内
+// `getaddrinfo ENOTFOUND <应用自身域名>` —— 运行沙箱解析不到发布域名，
+// 而这条信息原本要翻到 SDK 错误对象的 details 里才看得到。每次启动打一行，
+// 把「解析得到 / 解析失败 / 耗时」摊在明面上：出网类故障不必再猜。
+// 失败不阻塞启动：只是打印，服务照常起（页面会自行降级为 500 错误页）。
+// ---------------------------------------------------------------------------
+function lookupWithTimeout(host, ms = 5000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(Object.assign(new Error('lookup timeout'), { code: 'ETIMEOUT' })),
+      ms,
+    )
+    dns.lookup(host).then(
+      (r) => { clearTimeout(timer); resolve(r) },
+      (e) => { clearTimeout(timer); reject(e) },
+    )
+  })
+}
+
+async function logEndpointDns(endpoint, demo) {
+  if (demo) return { skipped: 'demo' }
+  let host
+  try {
+    host = new URL(endpoint).hostname
+  } catch {
+    console.log(`[research-share] dns: endpoint 不是合法 URL：${endpoint}`)
+    return { error: 'bad_endpoint' }
+  }
+  const started = Date.now()
+  try {
+    const r = await lookupWithTimeout(host)
+    const ms = Date.now() - started
+    console.log(`[research-share] dns ${host} -> ${r.address} (${ms}ms)`)
+    return { host, address: r.address, ms }
+  } catch (e) {
+    const ms = Date.now() - started
+    console.log(`[research-share] dns ${host} -> FAIL ${e.code || e.message} (${ms}ms)`)
+    console.log('[research-share] 数据面域名在容器内解析不到：服务端所有查库请求都会失败（页面 500）。')
+    return { host, error: e.code || e.message, ms }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 健康探针：把「运行期到底哪条链路断了」用一次 GET 摊开。
+//
+// 分两档返回，默认档只有「进程活着」这一个事实：
+//   默认（未配 HEALTH_TOKEN / token 不符）：{ ok, demo, uptimeSec }
+//   详情（?token= 与 HEALTH_TOKEN 相符）：追加 node / endpoint / dns / proxyEnv
+// 未配置 HEALTH_TOKEN 时永远只出默认档 —— 少填一个环境变量就少一条泄露路径。
+// 详情档里的 proxyEnv 只报键名：代理值可能带凭据。
+//
+// 与 /api/health 的分工：那个要 await 一次列表查询，数据面断了它也 500，
+// 看不到原因；本探针不碰数据面，专门回答「断在哪」。
+// ---------------------------------------------------------------------------
+const HEALTH_DETAIL_KEYS = [
+  'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_EXTRA_CA_CERTS',
+]
+
+export function createHealth({ demo, endpoint, siteUrl, port, token, readDns, env = process.env }) {
+  return function getHealth(url) {
+    const brief = { ok: true, demo, uptimeSec: Math.round(process.uptime()) }
+    if (!token) return brief
+    // 内部排障端点，不是身份凭证的比对入口：普通相等判断即可
+    if (!url || url.searchParams.get('token') !== token) return brief
+    return {
+      ...brief,
+      node: process.version,
+      endpoint: demo ? null : endpoint,
+      siteUrl,
+      port,
+      dns: readDns(),
+      proxyEnv: HEALTH_DETAIL_KEYS.filter((k) => env[k]),
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 路由 handler：纯函数式 module，全部依赖经 deps 注入，import 本文件不起服务。
 // 测试（test/server.test.js）与真实入口共用这一个 handler —— 同一条 seam。
 // ---------------------------------------------------------------------------
 
-export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }) {
+export function createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic, getHealth }) {
   return async function handler(req, res) {
     const rawUrl = req.url || '/'
     let reqUrl
@@ -48,6 +166,12 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       if (path === '/admin') {
         const html = await getAdminHtml()
         return sendHtml(res, 200, html)
+      }
+      // 健康自检：把「运行期到底哪条链路断了」用一次 GET 摊开。
+      // 默认只回「进程活着」，详情要 ?token= 与 HEALTH_TOKEN 相符（见 createHealth），
+      // 不含任何密钥 —— 排查线上 500 时不必再翻部署日志。
+      if (path === '/__health' && getHealth) {
+        return sendJson(res, 200, await getHealth(reqUrl), { 'Cache-Control': 'no-store' })
       }
       if (path.startsWith('/assets/')) {
         // 「怎么发」是静态资源 module 的内部细节，路由层只问命中与否
@@ -120,7 +244,7 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
       if (err && err.expose) {
         return sendJson(res, err.status || 400, { ok: false, error: err.code || 'bad_request', message: err.message }, CORS_HEADERS)
       }
-      console.error('[research-share] error:', err && err.message)
+      console.error('[research-share] error:', describeError(err))
       if (isApi) {
         return sendJson(res, 500, { ok: false, error: 'internal_error', message: '服务暂时不可用' }, CORS_HEADERS)
       }
@@ -209,12 +333,33 @@ async function main() {
 
   const { handleApi } = createAgentApi({ cloud, site, itemsStore })
 
+  // 启动时探一次数据面域名解析，结果同时留给 /__health（排障时一眼看到断在哪）
+  let dnsInfo = { pending: true }
+
+  const getHealth = createHealth({
+    demo: DEMO,
+    endpoint: ENDPOINT,
+    siteUrl: SITE_URL,
+    port: PORT,
+    // 未配置时详情档永不开启：线上要看得靠环境变量显式开启
+    token: process.env.HEALTH_TOKEN || '',
+    readDns: () => dnsInfo,
+  })
+
   const server = http.createServer(
-    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic }),
+    createHandler({ site, itemsStore, trackServerPageView, handleTrack, handleApi, getAdminHtml, tryServeStatic, getHealth }),
   )
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[research-share] listening on 0.0.0.0:${PORT}, endpoint=${DEMO ? '(demo)' : ENDPOINT}`)
+    // 只打键名不打值：代理值里可能带凭据。沙箱若只允许经代理出网，而 Node 的
+    // fetch（undici）默认不读 HTTP(S)_PROXY，表现就是连接超时 —— 这行决定了
+    // 「要不要给 SDK 注入 ProxyAgent」，是排查出网问题时最有信息量的一行。
+    const proxyKeys = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy', 'NODE_EXTRA_CA_CERTS']
+      .filter((k) => process.env[k])
+    console.log(`[research-share] proxy env: ${proxyKeys.join(',') || '(none)'}`)
+    // 不 await：DNS 探测最多挂 5s，不能挡住端口就绪
+    logEndpointDns(ENDPOINT, DEMO).then((info) => { dnsInfo = info })
     if (DEMO) {
       console.log('')
       console.log('[demo] 演示模式已启用：没有配置 CLOUD_ENDPOINT / CLOUD_PUBLISHABLE_KEY。')
