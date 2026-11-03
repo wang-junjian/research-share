@@ -22,7 +22,34 @@
 --   2. 对 15 参新版重申权限，按 db/03 第 7 节同口径点名收回。
 --
 -- 幂等：DROP IF EXISTS 与 REVOKE/GRANT 重复执行均无副作用。
+--
+-- 执行前置（实测踩到）：线上库曾长期只有 14 参版 —— db/04 的 CREATE OR REPLACE
+-- 从未真正应用（文件存在 ≠ 已执行）。若在这种库上只跑本文件，DROP 之后
+-- track_event 会彻底不存在，两条埋点路径全部失败。所以下面第 0 步先断言
+-- 15 参已就位；缺失时整段回滚，不会删掉任何东西。
+-- 新环境按 03 → 04 → 本文件 的顺序执行。
+--
+-- 事务：整段包在一个事务里。下面第 0 步的断言要真正拦住后面的 DROP，
+-- 必须靠事务而不是靠「报错就停」—— psql 默认 ON_ERROR_STOP=off，一条
+-- 语句报错只打 ERROR，接着执行下一条，DROP 照样会跑掉（`\set ON_ERROR_STOP on`
+-- 是 psql 元命令，云控制台的 SQL 编辑器不认）。包上 begin/commit 之后，
+-- 断言失败 → 整段回滚 → 函数原样还在，与控制台是否自动开事务无关。
 -- ===========================================================================
+
+begin;
+
+-- 0. 前置断言：15 参新版必须已存在（db/04 已应用）
+do $$
+begin
+  if not exists (
+    select 1 from pg_proc
+    where pronamespace = 'public'::regnamespace
+      and proname = 'track_event'
+      and pronargs = 15
+  ) then
+    raise exception 'track_event 15 参版本不存在：请先执行 db/04，否则本迁移会让埋点函数彻底消失';
+  end if;
+end $$;
 
 -- 1. 旧签名重载（db/03 的 14 参版）
 drop function if exists public.track_event(text, text, text, bigint, text, text, text, text, text, text, jsonb, text, text, boolean);
@@ -33,6 +60,8 @@ revoke all on function public.track_event(text, text, text, bigint, text, text, 
 
 -- 埋点必须匿名可调（公开页面上的访客没有登录态）
 grant execute on function public.track_event(text, text, text, bigint, text, text, text, text, text, text, jsonb, text, text, boolean, text) to anon;
+
+commit;
 
 -- 执行完请复查，期望只剩一个 track_event（pronargs = 15）、且 anon 只在它身上：
 --   select p.proname, p.pronargs, p.proacl from pg_proc p
