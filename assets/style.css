@@ -679,11 +679,16 @@ body.page-pub .btn-ghost:hover { background: var(--pub-accent-soft); border-colo
     font-size: 13px; text-decoration: none;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  /* 横排签与页签同色：主按钮蓝；「没有了」签维持纸面弱化态 */
-  .sibnav-mini a { background: var(--pub-accent); border-color: var(--pub-accent); color: #fff; }
+  /* 横排签与页签同色：主按钮蓝；「没有了」签维持纸面弱化态。
+   * 选择器必须带 body.page-pub 前缀：正文链接的落色规则是
+   * `body.page-pub a`（0,1,2），特异性高于 `.sibnav-mini a`（0,1,1）。
+   * 不带前缀时 color:#fff 会被它压回去，蓝底配蓝字 —— 字还在，
+   * 只是与背景同色而不可见。这个洞只在 ≤1240px 呈现，正好是微信/手机的宽度。
+   * 与 .btn-primary（第 472 行）同一种写法。 */
+  body.page-pub .sibnav-mini a { background: var(--pub-accent); border-color: var(--pub-accent); color: #fff; }
   .sibnav-mini-none { background: #faf8f2; border-color: var(--paper-line); color: #8d8fa0; }
   .sibnav-mini a:last-child, .sibnav-mini-none:last-child { text-align: right; }
-  .sibnav-mini a:hover { background: var(--pub-accent-deep); border-color: var(--pub-accent-deep); }
+  body.page-pub .sibnav-mini a:hover { background: var(--pub-accent-deep); border-color: var(--pub-accent-deep); color: #fff; }
 }
 .detail-foot { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 32px 0 6px; }
 .detail-src {
