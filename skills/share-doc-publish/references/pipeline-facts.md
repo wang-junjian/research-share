@@ -127,3 +127,20 @@ verify       detail 200 / og 5915B / listed true / source_link_live true
 - 封面图 `/og/<id>.png` 运行时手写 PNG 编码生成，正常体积 5.9 KB 左右；低于 2 KB 视作异常。
 - **全站封面字节数都是 5915 B，这是设计而非故障**：`og-image.js` 画的是「研究笔记横格纸」抽象图（暖白纸底 + 墨色横格 + 一条朱红批注线），**不含任何文字字形**；每条的区别只在朱红横线的位置与长度（由内容哈希决定），压缩后体积恰好撞到同一字节数。别把它当占位骨架，也别用「字节数相同」当「图没生成」的证据。
 - 字体与 SDK 自托管，页面不请求外部域名——所以文档里的外部图片会加载失败，静态 SVG 是安全的。
+
+---
+
+## 标题与摘要在展示端被怎么截断（`lib/render.js`，2026-11-08 核对）
+
+这段是 `references/editorial-standards.md` 的事实底稿：同一个 `summary` 写一次，会被四处按不同口径消费。
+
+| 去处 | 代码 | 口径 |
+|---|---|---|
+| 微信 / 分享卡 `og:description` | `renderDetail`: `truncate(it.summary, 80)` | 前 **80** 个码元，超出补 `…` |
+| 分享海报 `data-summary` | `renderDetail`: `truncate(it.summary, 220)` | 前 **220** 字 |
+| 纯文字分享 `data-overview` | `renderDetail` | 完整 summary |
+| 首页卡片 `col-deck` / 头条 `feat-deck` | `renderIndex` | 完整 summary，行数由 CSS 控制 |
+
+`truncate` 是 `t.length <= n ? t : t.slice(0, n).trimEnd() + '…'`，用 JS `s.length` = UTF-16 码元数，与 `pickText(..., {max})` 的限长口径**完全一致**。首页 `og:description` 用的是 `site.desc`（站点描述），不是条目 summary；只有详情页才把条目 summary 截到 80 字。
+
+微信卡片标题 / 描述各最多两行（README「微信分享的三条现实约束」），由微信控制而非 CSS。结论：**摘要第一句必须在 80 字内自带完整结论**，把关键信息放到第三句等于没写。对应地 `publish.py meta` 的 `review.og_hook` 把这 80 字原样输出，供技术编辑逐项审。
