@@ -72,7 +72,17 @@
 
     var sessionId = null
     var lastAt = 0
-    var sidRaw = ss('rs:sid')
+    // 读取顺序：标签页级存储优先，cookie 兜底。
+    //
+    // 兜底这一条不是可选项：sessionStorage 是**按标签页隔离**的，新开一个标签页
+    // 天然读不到上一个标签页的会话 —— 同一个人在微信里点两次链接、或者从列表页
+    // 长按「在新窗口打开」，就会被算成两个会话。会话数因此虚高，页均浏览
+    // （PV ÷ 会话）被压低，漏斗的「首页有交互」和「详情页浏览」还会被切到
+    // 两个不同会话里，中间那级流失凭空变大。cookie 是跨标签页的，用来兜这一层。
+    //
+    // 值里带最后一次活动时间（sid|lastAt）：只存 sid 的话，一个半小时前就过期的
+    // 会话会被下个标签页原样续上，30 分钟不活动切新会话的规则就失效了。
+    var sidRaw = ss('rs:sid') || cookie('rs:sid')
     if (sidRaw) {
       var parts = sidRaw.split('|')
       sessionId = parts[0]
@@ -82,8 +92,10 @@
     if (isNewSession) sessionId = rand()
     function touchSession() {
       lastAt = now()
-      ss('rs:sid', sessionId + '|' + lastAt)
-      cookie('rs:sid', sessionId, 1800)
+      // 两份存储写同一个值（sid|lastAt）：任何一份被清掉，另一份都能把会话接上
+      var v = sessionId + '|' + lastAt
+      ss('rs:sid', v)
+      cookie('rs:sid', v, 1800)
     }
     touchSession()
 

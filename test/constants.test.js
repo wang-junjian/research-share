@@ -15,8 +15,8 @@ import { createStaticFiles } from '../lib/static-files.js'
 // db/06 的 CHECK 与平台边缘 WAF 规则无法由代码生成，维持注释对照。
 // ---------------------------------------------------------------------------
 
-test('单一来源的值与现网一致：口径版本 v2、文档上限 1000000 字符、optout 键名', () => {
-  assert.equal(APP_VERSION, 'v2')
+test('单一来源的值与现网一致：口径版本 v3、文档上限 1000000 字符、optout 键名', () => {
+  assert.equal(APP_VERSION, 'v3')
   assert.equal(DOC_MAX_CHARS, 1000000)
   // render.js 的 OPTOUT_SCRIPT 内联脚本读不到 RS_CONST、维持字面量 + 注释点名，
   // 这里的期望值就是它要对齐的目标——改键名时两边一起改

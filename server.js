@@ -195,9 +195,16 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
         })
         return res.end(png)
       }
-      // 文档型成果的托管地址：直出原始 HTML。与 OG 封面同等待遇——不埋
-      // page_view（否则详情页浏览会被双倍计数）。CSP sandbox 把文档关进
-      // 孤立源：脚本能跑（图表可交互）但摸不到访客登录会话（docs/adr/0004）。
+      // 文档型成果的托管地址：直出原始 HTML。CSP sandbox 把文档关进孤立源：
+      // 脚本能跑（图表可交互）但摸不到访客登录会话（docs/adr/0004）。
+      //
+      // 这里**要埋**服务端 page_view（itemId + /item/N/doc）：
+      //   · 该页不加载 track.js（沙箱页注定跑不了本站埋点），服务端这条是
+      //     「文档真的被打开过」的唯一证据；
+      //   · 早先注释写的「否则详情页浏览会双倍计数」只在内嵌 iframe 时代成立，
+      //     详情页已改为「查看原文」直达（lib/render.js 注释），前提不存在了；
+      //   · 它不参与埋点覆盖率的分母 —— analytics_dashboard 里 serverPv 排除
+      //     page like '%/doc'，否则一个天然没有客户端事件的页面会把覆盖率压低。
       const docm = path.match(/^\/item\/(\d+)\/doc\/?$/)
       if (docm) {
         const it = await itemsStore.find(Number(docm[1]))
@@ -213,6 +220,7 @@ export function createHandler({ site, itemsStore, trackServerPageView, handleTra
           'Content-Security-Policy': 'sandbox allow-scripts',
           'X-Content-Type-Options': 'nosniff',
         })
+        trackServerPageView(req, { itemId: it.id, page: `/item/${it.id}/doc` })
         return res.end(doc.doc_html)
       }
       const m = path.match(/^\/item\/(\d+)\/?$/)

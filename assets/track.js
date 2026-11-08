@@ -153,9 +153,12 @@
         // 不动 share.js。换错的表现是 method 被白名单静默丢掉、props 变成 {}。
         var method = String(shareBtn.getAttribute('data-act') || '').replace(/-/g, '_')
         var props = { method: method }
-        // 两个「复制海报图」按钮在微信里必然降级 —— 这是能力检查，不是猜测
+        // 两个「复制海报图」按钮在微信里必然降级 —— 这是能力检查，不是猜测。
+        // 判据必须与 share.js 的 canWriteImage() 完全一致（含 isSecureContext）：
+        // 少了它，http 环境下会记成「没降级」而实际已经退回弹层。
         if (method === 'copy_poster' || method === 'copy_poster_link') {
-          props.degrade = !(navigator.clipboard && window.ClipboardItem && navigator.clipboard.write)
+          props.degrade = !(navigator.clipboard && window.ClipboardItem &&
+            navigator.clipboard.write && window.isSecureContext)
         }
         push('share', props)
         return
@@ -182,11 +185,22 @@
       var a = el.closest && el.closest('a[href]')
       if (a) {
         var url = a.getAttribute('href') || ''
-        if (/^https?:\/\//i.test(url)) {
-          var host = ''
-          try { host = new URL(url).hostname } catch (err) { host = '' }
-          if (host && host !== location.hostname) {
-            push('outbound_click', { dest_host: host })
+        // 用 URL 构造而不是正则判 https:// 前缀：文档型成果的原文是**本站**
+        // 托管地址（/item/N/doc），相对路径也可能出现，前缀判断会漏掉它们。
+        var abs = null
+        try { abs = new URL(url, location.href) } catch (err) { abs = null }
+        if (abs && /^https?:$/.test(abs.protocol)) {
+          var host = abs.hostname
+          // 「跳出当前页」有两种形态，都算转化：
+          //   · 跨域外链（原文在别人家）
+          //   · 托管文档（文档型成果的原文就存在本站，同域）
+          // 只判跨域会让文档型条目的北极星永久为 0，还会被看板判成
+          // 「点开不跳转」—— 那是把一个埋点缺口当成内容问题。
+          var isDoc = /^\/item\/\d+\/doc\/?$/.test(abs.pathname)
+          if (isDoc || host !== location.hostname) {
+            var outProps = { dest_host: host }
+            if (isDoc) outProps.via = 'doc'
+            push('outbound_click', outProps)
             flush()
           }
         }
