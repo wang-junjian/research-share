@@ -8,6 +8,7 @@
  * 6) 复制文字+原文链接 —— 纯文本三段：标题 / 概览 / 原文链接
  *
  * 海报上的数据来自详情页 .sharebar 的 data-* 属性，不额外请求接口。
+ * 海报二维码编的是 data-url（本页链接），不是 data-src（原文链接）。
  * 零依赖、无外链。
  *
  * 兼容性说明：写图片进剪贴板依赖 async clipboard + ClipboardItem，微信内置
@@ -211,9 +212,10 @@
     ctx.font = '500 ' + spec.meta.size + 'px ' + SANS
     ctx.fillText(spec.meta.text, spec.meta.x, spec.meta.y)
 
-    // 二维码：库缺失或编码失败时跳过卡与提示，海报其余部分照常
+    // 二维码：编 spec.qrUrl（本页链接）；原文链接只进分享文案，不进码。
+    // 库缺失或编码失败时跳过卡与提示，海报其余部分照常
     var qrMatrix = null
-    try { qrMatrix = window.QR.matrix(spec.src) } catch (e) { qrMatrix = null }
+    try { qrMatrix = window.QR.matrix(spec.qrUrl) } catch (e) { qrMatrix = null }
     if (qrMatrix) {
       ctx.fillStyle = '#FFFFFF'
       ctx.font = '400 ' + spec.qrHint.size + 'px ' + SANS
@@ -351,7 +353,7 @@
     // 剪贴板。而且必须在用户手势里同步做，不能等 Promise。
     var textCopied = false
     if (withLink) {
-      try { textCopied = legacyCopy(composeText()) } catch (e) { textCopied = false }
+      try { textCopied = legacyCopy(Layout.composeText(data)) } catch (e) { textCopied = false }
     }
 
     function fallback(cause) {
@@ -374,7 +376,7 @@
 
     // 值一律传 Promise：Safari 要求 ClipboardItem 的值是可等待对象，Chrome 也接受
     var items = { 'image/png': pngBlob(cv) }
-    if (withLink) items['text/plain'] = Promise.resolve(new Blob([composeText()], { type: 'text/plain' }))
+    if (withLink) items['text/plain'] = Promise.resolve(new Blob([Layout.composeText(data)], { type: 'text/plain' }))
 
     var pending
     try {
