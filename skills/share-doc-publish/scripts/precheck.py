@@ -46,11 +46,14 @@ EXTERNAL_REF = re.compile(r'(?:src|href)\s*=\s*"(?:https?:)?//', re.I)
 
 
 def extract_title(text: str) -> tuple[str, str]:
-    """返回 (title, h1)。资料库用 title 命名，站点用 h1 更贴近读者看到的标题。"""
+    """返回 (title, h1)。资料库用 <title> 命名；站点卡片标题优先沿用 h1 原文。"""
     t = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
     h = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.I | re.S)
 
     def clean(s: str) -> str:
+        # h1 里常用 <br> 做视觉换行（实测「…云服务<br>全景研究」）：那是排版，
+        # 不是词间空格。先删掉，否则抠出的标题会多出一个空格，卡片上也跟着多。
+        s = re.sub(r"<(?:br|wbr)\s*/?>", "", s, flags=re.I)
         s = re.sub(r"<[^>]+>", " ", s)
         s = re.sub(r"&[^;]+;", " ", s)
         return re.sub(r"\s+", " ", s).strip()

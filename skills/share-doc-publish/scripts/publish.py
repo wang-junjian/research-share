@@ -13,7 +13,8 @@
 
 用法：
     python3 scripts/publish.py scan <file>                      # 体检
-    python3 scripts/publish.py meta --title … --summary …        # 只数标题/摘要字数
+    python3 scripts/publish.py meta --title … --summary … [--doc-title …]  # 数字数 + 可机检的编辑审查
+    python3 scripts/publish.py shortlist <candidates.json|stdin> # 多组候选一次机检 + 择优排序
     python3 scripts/publish.py library <file> [--space-id S]    # 只做第 1 跳
     python3 scripts/publish.py site --title … --summary … --url …   # 只做第 2 跳
     python3 scripts/publish.py all <file> --title … --summary …  # 两跳 + 验收
@@ -28,6 +29,12 @@
 - 验收不看返回码：health 条数、详情页 200、封面图字节数、列表页标题，四样都要对。
 - **title ≤300、summary ≤400，字数按 UTF-16 码元算**（同 JS `s.length`），
   且在**上传前**校验——两跳不是事务，别让第 2 跳的 400 白建一个资料库页面。
+- 生成目标区间 title 20–40、summary 200–360，由 `review_meta` 出**提示**而非阻断；
+  `shortlist` 一次机检多组候选供择优，事实可溯 / 微信钩子 / 读者决策这几项
+  脚本判不了，见 references/editorial-standards.md。
+- **卡片标题优先沿用文档自己的标题**（h1 优先，无 h1 用 `<title>`）：传
+  `--doc-title` 或候选 JSON 的顶层 `doc_title`，机检会标注哪些组是原文标题版
+  （`title_is_doc_title`），并对原文标题豁免 20–40 目标区间；300 字硬上限照旧。
 """
 
 from __future__ import annotations
@@ -64,6 +71,12 @@ DEFAULT_SITE = "https://research-share.app.workbuddy.host"
 TITLE_MAX = 300
 SUMMARY_MAX = 400
 
+# 生成目标区间（编辑审查口径，不是接口约束）：与 references/editorial-standards.md 一致
+TITLE_TARGET = (20, 40)
+SUMMARY_TARGET = (200, 360)
+OG_DESC_LIMIT = 80          # lib/render.js renderDetail: truncate(summary, 80)
+POSTER_SUMMARY_LIMIT = 220  # renderDetail: data-summary
+
 
 def utf16_len(s: str) -> int:
     """按服务端口径数字数：JS 的 `s.length` 是 UTF-16 码元数。
@@ -74,10 +87,23 @@ def utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
-def check_meta(title: str, summary: str) -> list[str]:
-    """校验标题与摘要的长度。返回问题列表，空列表即通过。
+def same_title(a: str, b: str) -> bool:
+    """判定两个标题是不是同一个：折叠全部空白（含全角空格）后比较。
 
-    只做长度与必填，不管文风——但「别照抄资料库 og 描述」这类内容要求写在 SKILL.md。
+    文档标题可能来自手工填写的 `--doc-title`、`<title>` 或带 `<br>` 的 h1，
+    差一个空格不该让「沿用原标题」被误判成改写版。只用于来源判定，
+    不改动真正发出去的 title 字符串。
+    """
+    norm = lambda x: re.sub(r"[\s\u3000]+", "", x or "").strip()
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
+def check_meta(title: str, summary: str) -> list[str]:
+    """校验「能不能发」：必填 + 硬上限。返回问题列表，空列表即通过。
+
+    刻意只做长度与必填、不做文风——文风的机检部分在 review_meta（只提示），
+    人工判的部分在 references/editorial-standards.md。这个函数的返回值决定
+    cmd_all 会不会退出，加风格规则进来会让已有发布流程无故发不出去。
     """
     problems: list[str] = []
     t, s = (title or "").strip(), (summary or "").strip()
@@ -106,6 +132,266 @@ def meta_stats(title: str, summary: str) -> dict:
         "summary_len": utf16_len(s),
         "summary_max": SUMMARY_MAX,
         "summary_left": SUMMARY_MAX - utf16_len(s),
+    }
+
+
+# --------------------------------------------------------------------------
+# 技术编辑审查：可机检的那部分
+# --------------------------------------------------------------------------
+# 与 references/editorial-standards.md 的清单一一对应。这里只覆盖「字数 +
+# 禁用套话 + 格式 + 微信钩子」；事实是否属实、结论是否从正文得出、读起来
+# 想不想点开，脚本判不了，由按技能执行的智能体逐项人工判（HUMAN_ONLY）。
+# 关键：只产 warnings，**不阻断发布**；阻断只认 check_meta 的硬上限。
+
+GENERIC_OG_DESC = "workbuddy - 可人机协作的在线 page"
+
+# (正则, 理由)：理由要能直接当成「这个候选为什么被淘汰 / 改写」用，别只写「不够专业」
+BANNED_PATTERNS: list[tuple[str, str]] = [
+    (r"本文(?:介绍|阐述|探讨|分享|分析|讲述)了?|本篇(?:介绍|阐述)|这(?:份|篇)文档(?:介绍|讲述|主要)",
+     "指代式开场，前 80 字全花在「这份文档」上"),
+    (r"深度(?:解析|剖析|解读|分析)|全面(?:梳理|解析|总结|介绍)|一文(?:读懂|搞懂|讲透)|干货|保姆级|重磅|独家|首发",
+     "自媒体套话 / 营销腔，制造分量而不传递信息"),
+    (r"革命性|颠覆性|业界领先|行业首创|彻底解决|完全解决|完美(?:解决|实现)?|最佳实践|极具价值|非常重要|较强的参考价值",
+     "无法证实的绝对化表述，技术读者会直接不信"),
+    (r"我们(?:在|通过|将|可以|发现|对|把)?|笔者|本人(?:认为|在)",
+     "第一人称，卡片上应直接陈述事实，不要写「我们做了…」"),
+    (r"众所周知|不难看出|显而易见|毋庸置疑|值得一提的是|需要注意的是",
+     "填充式连接词，删掉不丢信息"),
+    (r"等等|诸如此类|限于篇幅|不再赘述|详见全文|这里不再展开",
+     "把信息推给正文，卡片上等于没写"),
+]
+
+# 只认常见标签名：技术摘要里的 <node_id> / <id> 这类占位符不该被当成 HTML
+HTML_TAG_RE = r"<(?:script|p|div|span|a|br|b|i|em|strong|h[1-6]|img|code|pre|ul|ol|li|table|tr|td)\b"
+
+HUMAN_ONLY = [
+    "前 80 字是否自带完整结论、脱离标题读得懂",
+    "标题是否优先沿用了文档原标题；若改写，是否有对象 / 动作 / 可核对的具体信息及改写理由",
+    "每个数字、专名、结论能否在正文里指出出处（不许编造）",
+    "摘要是否四段齐备、不写成目录",
+    "读者能否判断「跟我有关吗 / 要不要点开」",
+]
+
+
+def review_meta(title: str, summary: str, doc_title: str = "") -> dict:
+    """技术编辑审查里**可机检**的部分。返回逐项 checks 与可执行的 warnings。
+
+    与 check_meta 分工：那边判「能不能发」（必填 + 硬上限，会阻断），
+    这边判「值不值得发」（目标区间、套话、格式、微信钩子，只提示）。
+    所以这里不抛错、不改退出码；pass=true 也**不等于**编辑审查通过。
+
+    `doc_title` 是文档自己的标题（h1 优先，无 h1 用 `<title>`）。SKILL.md 要求
+    卡片标题优先沿用它，所以原文标题越过 20–40 目标区间时豁免该判据——原文
+    不该为了凑字数被改写；套话、格式、300 字硬上限仍照常生效。
+    """
+    t, s = (title or "").strip(), (summary or "").strip()
+    doc_title = (doc_title or "").strip()
+    is_doc_title = same_title(t, doc_title)
+    if not t or not s:
+        return {"pass": False, "warnings": ["标题或摘要为空，先补齐再审查"],
+                "checks": {}, "og_hook": "", "info": [],
+                "title_is_doc_title": is_doc_title, "doc_title": doc_title,
+                "human_only": HUMAN_ONLY,
+                "note": "review 只做可机检项，pass=true 不等于编辑审查通过；人工项见 human_only"}
+
+    n_t, n_s = utf16_len(t), utf16_len(s)
+    warnings: list[str] = []
+    info: list[str] = []
+    checks: dict[str, bool] = {}
+
+    # 1. 生成目标区间（编辑要求，不是接口约束）
+    lo, hi = TITLE_TARGET
+    # 沿用文档原标题时豁免字数区间：18 字的 h1 也是好标题，不该被硬凑成 20 字
+    checks["title_in_target"] = is_doc_title or (lo <= n_t <= hi)
+    if not (lo <= n_t <= hi):
+        if is_doc_title:
+            info.append(f"标题沿用文档原标题（{n_t} 字），越过目标 {lo}–{hi} 字不算问题："
+                        "按 SKILL.md 优先原文，不硬凑字数")
+        elif n_t < lo:
+            warnings.append(f"title {n_t} 字，短于目标 {lo} 字：优先取文档原标题，"
+                            "若确需自拟则补上研究对象或结论")
+        else:
+            warnings.append(f"title {n_t} 字，长于目标 {hi} 字：卡片上会被截，压掉修饰语只留对象 + 动作")
+
+    lo, hi = SUMMARY_TARGET
+    checks["summary_in_target"] = lo <= n_s <= hi
+    if n_s < lo:
+        warnings.append(f"summary {n_s} 字，短于目标 {lo} 字：四段式通常写不满，检查做法 / 证据 / 边界是否缺段")
+    elif n_s > hi:
+        warnings.append(f"summary {n_s} 字，长于目标 {hi} 字：多半在灌水，按四段式各留一句")
+
+    # 2. 禁用套话与资料库固定 og 文案
+    hits: list[str] = []
+    seen: set[str] = set()
+    for pat, why in BANNED_PATTERNS:
+        for m in re.finditer(pat, t + " " + s):
+            if m.group(0) in seen:
+                continue
+            seen.add(m.group(0))
+            hits.append(f"{m.group(0)}（{why}）")
+    checks["no_banned_phrases"] = not hits
+    if hits:
+        warnings.append("命中禁用套话：" + "；".join(hits[:4]) + ("…" if len(hits) > 4 else ""))
+
+    checks["not_generic_og"] = GENERIC_OG_DESC not in s.lower()
+    if not checks["not_generic_og"]:
+        warnings.append("summary 照抄了资料库固定 og 描述，必须按正文重写成实质概览")
+
+    # 3. 格式杂质（卡片 / 海报渲染会出问题）
+    fmt: list[str] = []
+    if re.search(r"[\r\n]", t + s):
+        fmt.append("含换行")
+    if re.search(r"^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)|[`*_]{2,}", s, re.M):
+        fmt.append("含 markdown 标记")
+    if re.search(HTML_TAG_RE, t + s, re.I):
+        fmt.append("含 HTML 标签")
+    if any(ord(c) > 0xFFFF for c in t + s):
+        fmt.append("含 emoji / BMP 外字符")
+    if "\u3000" in t + s or re.search(r"[ \t]{2,}", t + s):
+        fmt.append("含全角空格或连续空格")
+    if re.search(r"(?:…|——|--)\s*$", s):
+        fmt.append("以省略号 / 破折号收尾")
+    checks["clean_format"] = not fmt
+    if fmt:
+        warnings.append("格式杂质：" + "、".join(fmt))
+
+    # 4. 微信钩子：og:description 只取前 80 字。判据是**首句能否在 80 字内
+    #    收住**——这样微信卡片至少读到一个完整句子，而不是半句。
+    hook_text = s[:OG_DESC_LIMIT]
+    first = re.split(r"[。！？!?]", s, maxsplit=1)[0].strip()
+    first_len = utf16_len(first)
+    checks["og_hook_complete"] = first_len <= OG_DESC_LIMIT and bool(re.search(r"[。！？!?]", s))
+    if not checks["og_hook_complete"]:
+        if first_len > OG_DESC_LIMIT:
+            warnings.append(f"首句 {first_len} 字，超过微信卡片的 {OG_DESC_LIMIT} 字："
+                            "og:description 会停在半句，把结论压进首句并用句号收住")
+        else:
+            warnings.append("摘要没有句末标点，微信卡片读不到一个完整句子：给首句补上句号")
+
+    norm_t = re.sub(r"[\s：:，,。·—-]", "", t)
+    norm_s = re.sub(r"[\s：:，,。·—-]", "", s)
+    checks["title_not_echoed"] = not (len(norm_t) >= 10 and norm_s.startswith(norm_t[:28]))
+    if not checks["title_not_echoed"]:
+        warnings.append("summary 开头原样复述了标题：最金贵的前 80 字别用来重说一遍")
+
+    # 5. 四段式第 ③ 段要求的可复核数字（弱提示，确实没有就在候选对比表里写理由）
+    checks["has_verifiable_number"] = bool(re.search(r"\d", s))
+    if not checks["has_verifiable_number"]:
+        warnings.append("摘要里没有阿拉伯数字：四段式第 ③ 段要有一处可复核的数字"
+                        "（条数 / 字节数 / 状态码 / 耗时），按正文补上")
+
+    return {
+        "pass": not warnings,
+        "warnings": warnings,
+        "checks": checks,
+        # 信息项（不进 warnings）：原文标题版豁免了字数区间，把理由留痕
+        "info": info,
+        "title_is_doc_title": is_doc_title,
+        "doc_title": doc_title,
+        "targets": {
+            "title": list(TITLE_TARGET),
+            "summary": list(SUMMARY_TARGET),
+            "og_description": OG_DESC_LIMIT,
+            "poster_summary": POSTER_SUMMARY_LIMIT,
+        },
+        # 与 render.js 的 truncate 同口径：按 UTF-16 码元取前 80，超出补省略号
+        "og_hook": hook_text + ("…" if n_s > OG_DESC_LIMIT else ""),
+        "first_sentence_len": first_len,
+        # 信息项（不进 warnings）：卡片末尾停在句中是常见的，只要首句完整就不算问题
+        "og_hook_truncated_mid_sentence": n_s > OG_DESC_LIMIT and not re.search(r"[。！？!?；;]$", hook_text),
+        "human_only": HUMAN_ONLY,
+        "note": "review 只做可机检项，pass=true 不等于编辑审查通过；人工项见 human_only",
+    }
+
+
+def load_candidates(path: str) -> tuple[list[dict], str]:
+    """读一批候选：文件路径或 stdin；也接受 {"candidates": [...]} 包装。
+
+    每组至少要有 title / summary，id 缺省按 A / B / C 顺序补。
+    包装对象里的 `doc_title`（文档自己的标题）会一起带出，供机检标注哪几组
+    沿用了原文标题；也可用 `shortlist --doc-title` 覆盖。
+    """
+    raw = open(path, encoding="utf-8").read() if path else sys.stdin.read()
+    data = json.loads(raw)
+    doc_title = ""
+    if isinstance(data, dict):
+        doc_title = str(data.get("doc_title") or "")
+        data = data.get("candidates")
+    if not isinstance(data, list) or not data:
+        raise ValueError("应是至少含 1 组候选的数组，或含 candidates 数组的对象")
+    out: list[dict] = []
+    for i, c in enumerate(data):
+        if not isinstance(c, dict):
+            raise ValueError(f"第 {i + 1} 组不是对象")
+        out.append({
+            "id": str(c.get("id") or (chr(ord("A") + i) if i < 26 else str(i + 1))),
+            "title": str(c.get("title") or ""),
+            "summary": str(c.get("summary") or ""),
+        })
+    return out, doc_title
+
+
+def rank_candidates(candidates: list[dict], doc_title: str = "") -> dict:
+    """对一批候选做机检排序，给出**机检**推荐（不是定稿）。
+
+    排序只按可机检项：能否发布（硬上限）→ warnings 数 → 与目标区间的贴合度。
+    7 项清单里的 3～7 是内容判定，脚本不代劳；recommended 只是择优的起点。
+    SKILL.md 要求优先沿用文档原标题：**机检合格的原文标题版排在最前**，
+    并标出 title_is_doc_title / doc_title_candidates。没传 doc_title 时这一项
+    对所有候选相同，排序与旧版一致；判据本身（warnings、区间）不变。
+    """
+    doc_title = (doc_title or "").strip()
+    rows: list[dict] = []
+    t_mid, s_mid = sum(TITLE_TARGET) / 2, sum(SUMMARY_TARGET) / 2
+    for c in candidates:
+        t, s = c["title"], c["summary"]
+        problems = check_meta(t, s)
+        rv = review_meta(t, s, doc_title=doc_title)
+        st = meta_stats(t, s)
+        dist = abs(st["title_len"] - t_mid) / t_mid + abs(st["summary_len"] - s_mid) / s_mid
+        eligible = not problems and rv.get("pass", False)
+        rows.append({
+            "id": c["id"],
+            "title": t,
+            "title_len": st["title_len"],
+            "title_is_doc_title": rv.get("title_is_doc_title", False),
+            "summary_len": st["summary_len"],
+            "ok": not problems,                        # 能不能发（硬上限）
+            "review_pass": rv.get("pass", False),      # 机检过不过
+            "eligible": eligible,
+            "problems": problems,
+            "warnings": rv.get("warnings", []),
+            "failed_checks": [k for k, v in rv.get("checks", {}).items() if not v],
+            "og_hook": rv.get("og_hook", ""),
+            "first_sentence_len": rv.get("first_sentence_len", 0),
+            "_score": (0 if eligible else 1,
+                       0 if (eligible and rv.get("title_is_doc_title")) else 1,
+                       len(rv.get("warnings", [])), round(dist, 4)),
+        })
+    rows.sort(key=lambda r: r["_score"])
+    for r in rows:
+        r.pop("_score", None)
+    best = rows[0] if rows and rows[0]["eligible"] else None
+    native = [r["id"] for r in rows if r["title_is_doc_title"]]
+    native_note = ("本批原文标题版：" + "、".join(native) + "，按 SKILL.md 应优先选它"
+                   if native else "本批没有原文标题版：检查是否漏放，或在对比表写明原标题为何不适用")
+    return {
+        "ok": True,
+        "count": len(rows),
+        "doc_title": doc_title,
+        "doc_title_candidates": native,
+        "candidates": rows,
+        "recommended": best["id"] if best else None,
+        "recommend_reason": (
+            (f"{best['id']} 机检零警告、未踩硬上限"
+             + ("，且沿用了文档原标题（优先项）" if best["title_is_doc_title"]
+                else "，字数最贴近目标区间"))
+            if best else "整批都没有通过机检：按 7 项清单逐组复核后再生成一批，最多 3 批"
+        ),
+        "human_only": HUMAN_ONLY,
+        "note": "recommended 按「原文标题版优先 + 可机检项最优」排序，仍只是形式判断；"
+                + native_note + "。最终定稿须按 7 项清单逐组人工判，"
+                  "改写原标题要写明理由，并按读者场景选角度，不选最华丽的那一版",
     }
 
 
@@ -401,7 +687,8 @@ def stage_verify(item_id: int, *, project: str | None = None, site: str = "") ->
     # 链接型：卡片指向的资料库公开页**还活着吗**。
     # 状态码骗人：页面取消发布后 workbuddy.link 仍返回 200，只是换成 5957 字节的
     # 通用壳页（<title>WorkBuddy</title>、body 空）。判据只能是页面标题——
-    # 而且**不能拿条目标题去比**：条目标题是按 h1 改写的，公开页的 <title> 是文档原标题。
+    # 而且**不能拿条目标题去比**：条目标题可能沿用 h1 原文、也可能由编辑改写，
+    # 公开页的 <title> 是文档原始标签标题，两者不保证一致。
     link = (it_obj.get("url") or "") if isinstance(it_obj, dict) else ""
     link_info = None
     if "workbuddy.link" in link:
@@ -456,17 +743,28 @@ def cmd_all(args) -> int:
 
     # 标题/摘要的字数必须在**上传前**定下来（见 TITLE_MAX 处的说明）。这里用的
     # title 就是后面真正发给站点的那一个，所以兜底链要和「人会给什么」一致：
-    # --title > 文档 h1（SKILL.md 推荐的卡片句式）> <title> > 文件名。
+    # --title > 文档自己的标题（h1 优先，无 h1 用 <title>）> 文件名。
+    # SKILL.md 要求优先沿用文档原标题；显式 --title 是编辑改写版，优先级更高。
     # 不用资料库改写后的语义名当兜底——那要等第 1 跳跑完才知道，没法前置校验。
+    doc_title = re.sub(r"\s+", " ", pre.get("h1") or pre.get("title") or "").strip()
     title = (args.title or "").strip()
     if not title:
-        title = re.sub(r"\s+", " ", pre.get("h1") or pre.get("title") or "").strip()
+        title = doc_title
     if not title:
         title = os.path.splitext(os.path.basename(args.file))[0]
 
     meta_problems = check_meta(title, args.summary)
     report["meta"] = meta_stats(title, args.summary)
-    report["meta"]["title_source"] = "arg" if args.title else "h1/title/filename"
+    report["meta"]["title_source"] = (
+        "arg" if args.title else "doc_h1" if pre.get("h1")
+        else "doc_title_tag" if pre.get("title") else "filename"
+    )
+    report["meta"]["doc_title"] = doc_title
+    report["meta"]["title_is_doc_title"] = same_title(title, doc_title)
+    # 审查结论随报告一起走（dry-run 也有），但只有硬上限会阻断；定稿应是
+    # `shortlist` 多候选择优的结果，7 项人工判定由按技能执行的智能体负责，
+    # 见 references/editorial-standards.md
+    report["review"] = review_meta(title, args.summary, doc_title=doc_title)
     if meta_problems:
         hint = "" if args.title else "（当前标题自动取自文档标题，可用 --title 显式指定一个更短的）"
         print(json.dumps({
@@ -531,8 +829,13 @@ def cmd_all(args) -> int:
     if not args.dry_run:
         print("\n—— 结果 ——")
         m = report["meta"]
+        rv = report["review"]
         print(f"字数          标题 {m['title_len']}/{m['title_max']} · "
               f"摘要 {m['summary_len']}/{m['summary_max']}")
+        review_line = "机检通过" if rv["pass"] else f"机检 {len(rv['warnings'])} 条提示"
+        print(f"编辑审查      {review_line} · 人工项 {len(rv['human_only'])} 项需逐项判（定稿应来自多候选择优）")
+        for w in rv["warnings"][:3]:
+            print(f"  - {w}")
         print(f"资料库公开页  {lib.get('publish_url')}")
         print(f"编辑（需登录）{lib.get('edit_url')}")
         print(f"站点详情页    {site.get('page_url')}   {site.get('no')}")
@@ -548,6 +851,8 @@ def main() -> None:
     ap.add_argument("stage", nargs="?", default="")
     ap.add_argument("file", nargs="?", default="")
     ap.add_argument("--title", default="")
+    ap.add_argument("--doc-title", dest="doc_title", default="",
+                    help="文档自己的标题（h1 优先）；用于标注哪些候选沿用了原文标题")
     ap.add_argument("--summary", default="")
     ap.add_argument("--url", default="")
     ap.add_argument("--date", default="")
@@ -584,12 +889,30 @@ def main() -> None:
                          ensure_ascii=False, indent=2))
         return
     if args.stage == "meta":
-        # 只数字数，不碰网络：改摘要时来回跑这个，比 dry-run 更轻
+        # 数字数 + 机检编辑项，不碰网络：改摘要时来回跑这个，比 dry-run 更轻。
+        # 退出码只由 check_meta 决定 —— review 的 warnings 是提示，不该挡住发布。
         problems = check_meta(args.title, args.summary)
+        st = meta_stats(args.title, args.summary)
+        doc_title = (args.doc_title or "").strip()
+        st["doc_title"] = doc_title
+        st["title_is_doc_title"] = same_title(args.title, doc_title)
         print(json.dumps({"ok": not problems, "problems": problems,
-                          "meta": meta_stats(args.title, args.summary)},
+                          "meta": st,
+                          "review": review_meta(args.title, args.summary, doc_title=doc_title)},
                          ensure_ascii=False, indent=2))
         sys.exit(0 if not problems else 1)
+    if args.stage == "shortlist":
+        # 一次机检多组候选并排序：主流程是「生成多版 → 择优」，不是串行返工。
+        # 无合格候选时 exit 1，提示换一批；仍不阻断任何真实发布动作。
+        try:
+            cands, inline_doc_title = load_candidates(args.file)
+            result = rank_candidates(cands, doc_title=args.doc_title or inline_doc_title)
+        except (OSError, ValueError) as e:
+            print(json.dumps({"ok": False, "error": f"候选读取失败：{e}"},
+                             ensure_ascii=False, indent=2))
+            sys.exit(1)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sys.exit(0 if result["recommended"] else 1)
     if args.stage == "all":
         sys.exit(cmd_all(args))
 
