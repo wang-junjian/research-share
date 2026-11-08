@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 // ---------------------------------------------------------------------------
 // 海报排版（GLOSSARY: 海报排版）的 interface 表征测试。
@@ -10,6 +11,8 @@ import assert from 'node:assert/strict'
 //   · fit：逐 2px 缩字号直到行数达标；循环耗尽时返回最后实际测量的字号
 //     （原 quirk「多减一次」已修复，见模块头注释）
 //   · composeText / srcLink：原文链接口径（src 优先、url 兜底）与三段正文
+// 二维码口径后改为本页链接（posterSpec.qrUrl），与 srcLink 解耦；末尾另钉
+// 住 share.js 的编码入口接线，防止接回原文链接。
 //
 // seam 与 browser-data.test.js 同款：预设最小 window 后顶层 import。
 // fake measure 用「半em 等宽」模型：每字符宽 = 字号 × 0.5，字号从 fontCss 解析。
@@ -143,7 +146,7 @@ test('posterSpec：红带左侧三行纯文字层级——部门署名 / 日期�
   assert.equal(spec.meta.x, 104)
   assert.equal(spec.meta.y, 1010 + 182)
   assert.equal(spec.meta.size, 30)
-  assert.equal(spec.qrHint.text, '长按识别 · 阅读原文')
+  assert.equal(spec.qrHint.text, '长按识别 · 查看详情')
   assert.equal(spec.qrHint.x, 104)
   assert.equal(spec.qrHint.y, 1010 + 237)
   assert.equal(spec.qrHint.size, 26)
@@ -166,8 +169,26 @@ test('posterSpec：标题与概览居中于内容区，不侵入红带', () => {
   assert.ok(summaryBottom <= 962, '内容区下缘不越过红带')
 })
 
-test('posterSpec：src 走 srcLink 口径（src 优先、url 兜底）', () => {
-  assert.equal(PosterLayout.posterSpec(halfEm, DATA).src, 'https://example.com/original')
+test('posterSpec：二维码编本页链接，与原文链接口径解耦', () => {
+  const spec = PosterLayout.posterSpec(halfEm, DATA)
+  assert.equal(spec.qrUrl, DATA.url, '链接型成果也编本页链接，不编 src')
+  assert.equal(spec.src, undefined, 'spec 不再导出原文链接，免得调用方误用')
+
+  // 文档型（src 为空）与换了原文地址的成果，二维码内容都不跟着变
   const docType = Object.assign({}, DATA, { src: '' })
-  assert.equal(PosterLayout.posterSpec(halfEm, docType).src, DATA.url)
+  assert.equal(PosterLayout.posterSpec(halfEm, docType).qrUrl, DATA.url)
+  const otherSrc = Object.assign({}, DATA, { src: 'https://another.example.org/x' })
+  assert.equal(PosterLayout.posterSpec(halfEm, otherSrc).qrUrl, DATA.url)
+  assert.equal(PosterLayout.srcLink(otherSrc), 'https://another.example.org/x', '文案仍走原文口径')
+})
+
+// 接线壳没有 DOM seam，直接钉住编码入口与文字分享调用点：防止以后把二维码
+// 接回原文链接，也防止 copyPoster 再调不存在的裸 composeText()（票 #12 遗留）。
+test('share.js 接线：二维码只吃 spec.qrUrl，文字分享统一走 Layout.composeText', () => {
+  const src = readFileSync(new URL('../assets/share.js', import.meta.url), 'utf8')
+  assert.match(src, /QR\.matrix\(spec\.qrUrl\)/, '二维码编码本页链接')
+  assert.doesNotMatch(src, /QR\.matrix\(spec\.src\)/, '不得再编原文链接')
+  assert.doesNotMatch(src, /QR\.matrix\(Layout\.srcLink/, '不得把 srcLink 口径接进二维码')
+  assert.equal((src.match(/Layout\.composeText\(data\)/g) || []).length, 3, '三处文字分享统一口径')
+  assert.doesNotMatch(src, /(?<!Layout\.)\bcomposeText\(\)/, '不得调用未定义的裸 composeText()')
 })

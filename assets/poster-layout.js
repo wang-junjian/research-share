@@ -80,7 +80,8 @@
   }
 
   // 原文链接的单点口径：优先原文地址（src），缺失退回本页链接（url），
-  // 绝不复制出空串。composeText 与调用方的「复制原文链接」共用，别各写一份
+  // 绝不复制出空串。composeText 与调用方的「复制原文链接」共用，别各写一份。
+  // 注意：海报二维码不取这个口径 —— 它编的是本页链接（posterSpec.qrUrl）。
   function srcLink(d) {
     return d.src || d.url
   }
@@ -146,10 +147,13 @@
       band: { x: 0, y: bandY, w: W, h: BAND_H },
       dept: { text: DEPT, x: PAD, y: bandY + 118, size: 34 },
       meta: { text: [d.date, d.by].filter(Boolean).join('  ·  '), x: PAD, y: bandY + 182, size: 30 },
-      qrHint: { text: '长按识别 · 阅读原文', x: PAD, y: bandY + 237, size: 26 },
+      qrHint: { text: '长按识别 · 查看详情', x: PAD, y: bandY + 237, size: 26 },
       qrCard: { x: W - PAD - CARD, y: bandY + (BAND_H - CARD) / 2, size: CARD },
       qr: { x: W - PAD - CARD + CARD_INSET, y: bandY + (BAND_H - CARD) / 2 + CARD_INSET, size: CARD - CARD_INSET * 2 },
-      src: srcLink(d),
+      // 二维码编本页链接（站内详情页），不再编原文链接：收到海报的人扫进来
+      // 先落在详情页，要不要跳去原文由「查看原文 ↗」自己决定。原文链接仍由
+      // srcLink 口径服务「复制原文链接 / 文字分享」，两条口径刻意分开。
+      qrUrl: d.url,
     }
   }
 
