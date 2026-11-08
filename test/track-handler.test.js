@@ -34,7 +34,7 @@ const siteUrl = 'https://share.example.com'
 
 async function withTrack(fn) {
   const cloud = fakeCloud()
-  const { trackServerPageView, handleTrack } = createTrack({
+  const { trackServerPageView, handleTrack, flushDrops } = createTrack({
     salt: 'test-salt',
     siteUrl,
     cloud,
@@ -55,7 +55,7 @@ async function withTrack(fn) {
   // 确定性同步点：攒批 await 所有经 interface 返回的落库 promise
   const flush = () => Promise.all(writes)
   try {
-    await fn(base, cloud, flush)
+    await fn(base, cloud, flush, flushDrops)
   } finally {
     await new Promise((r) => server.close(r))
   }
@@ -184,5 +184,23 @@ test('单 IP 频控：窗口内第 61 次请求起，事件被丢弃', async () 
     }
     await flush()
     assert.equal(cloud.calls.length, 60)
+  })
+})
+
+// 被频控丢弃的那批必须留下痕迹：否则看板健康度永远显示「丢弃 0」，
+// NAT 后面的真实流量被截断也看不出来（docs/analytics.md §8 的要求）。
+test('频控丢弃记账：（Track 命中后调用 track_drop，原因 rate_limit，计数正确）', async () => {
+  await withTrack(async (base, cloud, flush, flushDrops) => {
+    for (let i = 0; i < 65; i++) {
+      await post(base, { v: 'visitor_abc', s: 'session_xyz', events: [{ n: 'page_view', pg: '/' }] })
+    }
+    await flush()
+    // 丢弃计数是内存聚合的：不 flushDrops 就不该有 track_drop 调用
+    assert.equal(cloud.calls.filter((c) => c.fn === 'track_drop').length, 0)
+
+    await flushDrops()
+    const drops = cloud.calls.filter((c) => c.fn === 'track_drop')
+    assert.equal(drops.length, 1)
+    assert.deepEqual(drops[0].args, { p_reason: 'rate_limit', p_n: 5 })
   })
 })

@@ -27,9 +27,9 @@
 
 - **Agent API**：`/api/*` 下的读写接口，位于 `lib/agent-api.js`。读公开、写需 token（三道通道：`Authorization: Bearer`、`X-Agent-Token`、`?token=`）。写操作经数据库 SECURITY DEFINER 函数落库，token 只存 SHA-256。
 - **埋点事件（Track Event）**：匿名访问统计，位于 `lib/track.js`。两条路径：SSR page_view（source='server'，刻意不带 session_id）与浏览器批量上报 `/api/track`（source='client'，永远 204）。客户端 ÷ 服务端 = 埋点覆盖率。
-- **口径版本（ver）**：客户端埋点上报携带的版本号（`assets/track.js` 的 `VERSION`，形如 `v1`；改口径必须递增，否则跨版本趋势不可比）。经 `track_event(p_app_version)` 落进 `research_events.app_version` 列，看板 versions 维度据此分组。格式非法（非 `^v\d{1,8}$`）时服务端不传参，走数据库默认 `'v1'`。迁移见 `db/04-track-event-version.sql`。
+- **口径版本（ver）**：客户端埋点上报携带的版本号（`assets/track.js` 读共享常量 `APP_VERSION`，形如 `v3`；改口径必须递增，否则跨版本趋势不可比）。经 `track_event(p_app_version)` 落进 `research_events.app_version` 列，看板 versions 维度据此分组。格式非法（非 `^v\d{1,8}$`）时服务端不传参，走数据库默认 `'v1'`。迁移见 `db/04-track-event-version.sql`；v2 = 下线 `change_view_mode`，v3 = 会话跨标签页复用 + 文档型跳转可见 + 分享 method 补 `copy_src`（`db/09-analytics-fixes.sql`）。**v3 之前的会话数与跳转率不可与本版直接比较。**
 - **访客识别**：UA 解析（device / os / browser / isBot 枚举）与来源归类（wechat / zhihu / search / direct / internal / other）。IP 只存加盐 SHA-256 前 32 位，不落明文。
-- **埋点采集核心（Track Core）**：客户端埋点的纯逻辑深模块（`assets/track-core.js`，挂 `window.TrackCore`）。interface 三个成员：`optedOut`（退出统计判定，键名经参数传入）、`itemIdFromPath`（`/item/:id` 识别）、`createTracker(deps) → { push, flush, visitorId, sessionId, isNewSession }`——访客身份双写对齐、会话 30 分钟 TTL、队列去抖（10 条/3 秒）、payload 组装、optout 重读、sendBeacon→fetch 降级链全部收在闭包里，存储/时钟/随机源/发送通道经参数注入。`assets/track.js` 退为接线壳：页面守卫（/admin、webdriver、optout 早退）、DOM 事件委托、自动事件、`window.RS` 暴露。测试经「预设 window + 顶层 import」seam 直贴 interface（`test/track-core.test.js`）。
+- **埋点采集核心（Track Core）**：客户端埋点的纯逻辑深模块（`assets/track-core.js`，挂 `window.TrackCore`）。interface 三个成员：`optedOut`（退出统计判定，键名经参数传入）、`itemIdFromPath`（`/item/:id` 识别）、`createTracker(deps) → { push, flush, visitorId, sessionId, isNewSession }`——访客身份双写对齐、会话 30 分钟 TTL（标签页级存储为主、cookie 兜底，cookie 值带 `lastAt`，所以**新开标签页不算新会话**）、队列去抖（10 条/3 秒）、payload 组装、optout 重读、sendBeacon→fetch 降级链全部收在闭包里，存储/时钟/随机源/发送通道经参数注入。`assets/track.js` 退为接线壳：页面守卫（/admin、webdriver、optout 早退）、DOM 事件委托、自动事件、`window.RS` 暴露。测试经「预设 window + 顶层 import」seam 直贴 interface（`test/track-core.test.js`）。
 
 ## 身份与登录
 

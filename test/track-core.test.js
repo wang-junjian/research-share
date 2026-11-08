@@ -83,7 +83,9 @@ test('新访客：rand 发证并双写 localStorage + cookie；新会话同理�
   assert.equal(t.isNewSession, true)
   assert.equal(t.sessionId, 'rand2')
   assert.equal(store.mem.ss.get('rs:sid'), 'rand2|1000000')
-  assert.equal(store.mem.cookie.get('rs:sid'), 'rand2')
+  // cookie 里存的是同一个值（sid|lastAt）—— 它是跨标签页复用的唯一依据，
+  // 只存 sid 会让过期的会话被下一个标签页原样续上
+  assert.equal(store.mem.cookie.get('rs:sid'), 'rand2|1000000')
 })
 
 test('老访客：cookie 已有 rs_vid 时沿用，并对齐写回 localStorage', () => {
@@ -132,7 +134,40 @@ test('push 每次续期会话（touchSession 写回 ss + cookie）', () => {
   f.state.now = 1_001_000
   t.push('page_view')
   assert.equal(f.store.mem.ss.get('rs:sid'), t.sessionId + '|1001000')
-  assert.equal(f.store.mem.cookie.get('rs:sid'), t.sessionId)
+  assert.equal(f.store.mem.cookie.get('rs:sid'), t.sessionId + '|1001000')
+})
+
+// ---------------------------------------------------------------------------
+// 会话跨标签页复用（v3）
+//
+// sessionStorage 按标签页隔离，新开标签页天然读不到上一个标签页的会话。
+// 修复前：同一个人在微信里点两次链接 = 两条会话 —— 会话数虚高、页均浏览偏低、
+// 漏斗的「首页有交互」与「详情页浏览」被切到两个会话里，中间那级流失凭空变大。
+// 兜底来源是 cookie（跨标签页共享），且必须带上一次活动时间，否则 30 分钟
+// 不活动切新会话的规则会失效。
+// ---------------------------------------------------------------------------
+test('新标签页（标签页存储为空、cookie 有未过期会话）：复用同一 sessionId', () => {
+  const f = fakeDeps()
+  f.store.cookie('rs:sid', 'sidOther|' + String(f.state.now - 5 * 60 * 1000))
+  const t = TrackCore.createTracker(f.deps)
+  assert.equal(t.sessionId, 'sidOther')
+  assert.equal(t.isNewSession, false)
+})
+
+test('cookie 里的会话已过 30 分钟：不复用，发新证', () => {
+  const f = fakeDeps()
+  f.store.cookie('rs:sid', 'sidOld|' + String(f.state.now - 31 * 60 * 1000))
+  const t = TrackCore.createTracker(f.deps)
+  assert.equal(t.isNewSession, true)
+  assert.equal(t.sessionId, 'rand2', 'rand1 先被访客身份消费')
+})
+
+test('旧格式 cookie（只存 sid、无时间戳）：按已过期处理，不续用', () => {
+  const f = fakeDeps()
+  f.store.cookie('rs:sid', 'sidLegacy')
+  const t = TrackCore.createTracker(f.deps)
+  assert.equal(t.isNewSession, true)
+  assert.equal(t.sessionId, 'rand2')
 })
 
 test('批量：满 10 条立即 flush，不等定时器', () => {

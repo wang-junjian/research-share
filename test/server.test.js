@@ -219,14 +219,27 @@ test('GET /item/:id/doc 对链接型成果与不存在的 id 均 404', async () 
   })
 })
 
-test('埋点口径：托管地址不产生 page_view，详情页恰为一次', async () => {
-  let pageViews = 0
+// 托管文档页要埋服务端 page_view：沙箱页跑不了本站埋点，这是「文档真的被打开」
+// 的唯一证据（v3 起；此前刻意不埋，理由是「详情页会双倍计数」，而详情页早就不
+// 内嵌 iframe 了，前提已不存在）。覆盖率分母那边由 analytics_dashboard 排除 /doc。
+test('埋点口径：托管地址产生一条服务端 page_view（带 itemId），详情页恰为一次', async () => {
+  const seen = []
   await withServer([RAW_DOC], async (base) => {
     assert.equal((await fetch(`${base}/item/9/doc`)).status, 200)
-    assert.equal(pageViews, 0)
+    assert.deepEqual(seen, [{ itemId: 9, page: '/item/9/doc' }])
     assert.equal((await fetch(`${base}/item/9`)).status, 200)
-    assert.equal(pageViews, 1)
-  }, { trackServerPageView: () => { pageViews++ } })
+    assert.deepEqual(seen[1], { itemId: 9, page: '/item/9' })
+    assert.equal(seen.length, 2)
+  }, { trackServerPageView: (req, opts) => { seen.push(opts) } })
+})
+
+test('埋点口径：托管地址 404 时不产生 page_view', async () => {
+  const seen = []
+  await withServer([RAW_DOC], async (base) => {
+    assert.equal((await fetch(`${base}/item/7/doc`)).status, 404)
+    assert.equal((await fetch(`${base}/item/999/doc`)).status, 404)
+    assert.equal(seen.length, 0)
+  }, { trackServerPageView: (req, opts) => { seen.push(opts) } })
 })
 
 test('详情页·文档型：不内嵌文档（无 iframe），按钮与链接型一致指向托管地址', async () => {

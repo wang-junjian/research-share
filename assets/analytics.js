@@ -113,12 +113,15 @@
       rate: t.map(function (d) { return d.view_item ? d.outbound / d.view_item : 0 })
     }
     var KPI = [
+      // base = 该指标的样本量（显示为 n=…）。访客数与会话数本身是基数，
+      // 标 n 等于标自己，所以留空；行为类指标以「会话」为样本单位，
+      // 率类指标以分母（view_item）为样本单位。
       { k: '访客数', tip: '按 visitor_id 去重的独立访客（已剔除自己人与机器人）', v: o.visitors, p: p.visitors, s: series.visitors },
-      { k: '会话数', tip: '30 分钟不活动即切新会话', v: o.sessions, p: p.sessions, s: series.sessions },
-      { k: '页面浏览', tip: '客户端与服务端各有记录，此处取客户端口径（服务端那批在 F 区块用来算覆盖率）', v: o.pageviews, p: p.pageviews, s: series.pageviews },
-      { k: '原文跳转数', tip: '北极星指标：点击「查看原文 ↗」或详情页原文链接的次数', v: o.outboundClicks, p: p.outboundClicks, s: series.outbound, north: true },
-      { k: '原文跳转率', tip: 'outbound_click ÷ view_item。本站的终极转化', v: o.outboundRate, p: p.outboundRate, s: series.rate, rate: true },
-      { k: '分享次数', tip: '5 个分享按钮的点击合计', v: o.shares, p: p.shares, s: series.shares }
+      { k: '会话数', tip: '同一浏览器的所有标签页共享一个会话（v3 起），30 分钟不活动才算新会话', v: o.sessions, p: p.sessions, s: series.sessions },
+      { k: '页面浏览', tip: '客户端与服务端各有记录，此处取客户端口径（服务端那批在 F 区块用来算覆盖率）', v: o.pageviews, p: p.pageviews, s: series.pageviews, base: o.sessions },
+      { k: '原文跳转数', tip: '北极星指标：点击「查看原文 ↗」或详情页原文链接的次数（含托管文档）', v: o.outboundClicks, p: p.outboundClicks, s: series.outbound, north: true, base: o.sessions },
+      { k: '原文跳转率', tip: 'outbound_click ÷ view_item。本站的终极转化', v: o.outboundRate, p: p.outboundRate, s: series.rate, rate: true, base: o.view_item },
+      { k: '分享次数', tip: '6 个分享按钮的点击合计', v: o.shares, p: p.shares, s: series.shares, base: o.sessions }
     ]
     var small = (o.sessions || 0) < SMALL
     $('kpis').innerHTML = KPI.map(function (c) {
@@ -132,7 +135,7 @@
         '<div class="v">' + val + (c.rate && has ? '<span class="u">%</span>' : '') + '</div>' +
         '<div class="d">' + d +
         (small && !isEmpty ? ' <span class="an-tag is-warn">样本少</span>' : '') +
-        (!isEmpty && has && !c.rate ? ' <span class="vs">n=' + fmt(c.v) + '</span>' : '') + '</div>' +
+        (!isEmpty && has && c.base != null ? ' <span class="vs">n=' + fmt(c.base) + '</span>' : '') + '</div>' +
         '<div class="spk">' + (isEmpty ? '<div style="height:30px"></div>' : spark(c.s, 160, 30)) + '</div>' +
         '</div>'
     }).join('')
@@ -232,8 +235,12 @@
 
   function drawShare(D) {
     var total = D.overview.shares
+    // 明细合计 vs 总数：两者必须相等。不相等说明有事件的 method 没被数据库
+    // 白名单认下来（props 被清空后照落库，但在下面这几行里 join 不到）——
+    // 宁可把差额写在脸上，也不要让「5 行加起来不等于总数」静悄悄地存在。
+    var listed = D.share.reduce(function (a, x) { return a + (x.n || 0) }, 0)
     $('shareTotal').textContent = fmt(total)
-    if (!total) { $('share').innerHTML = emptyBox('还没有人点过分享', '5 个按钮谁在用、谁是摆设，点一次就能看出来。'); return }
+    if (!total) { $('share').innerHTML = emptyBox('还没有人点过分享', '6 个按钮谁在用、谁是摆设，点一次就能看出来。'); return }
     var max = Math.max.apply(null, D.share.map(function (x) { return x.n })) || 1
     $('share').innerHTML = '<div class="an-rows">' + D.share.map(function (x) {
       return '<div class="an-row' + (x.n === max && x.n > 0 ? ' is-hot' : '') + '">' +
@@ -243,7 +250,11 @@
         (x.degrade ? ' <span class="an-tag is-warn">降级 ' + x.degrade + '</span>' : '') +
         (x.n && x.n < SMALL ? ' <span class="an-tag">样本少</span>' : '') + '</div>' +
         '</div>'
-    }).join('') + '</div>'
+    }).join('') + '</div>' +
+      (listed === total ? '' : '<p class="an-note" style="margin:9px 0 0">' +
+        '明细合计 <b>' + fmt(listed) + '</b> 次，比总数少 <b>' + fmt(total - listed) + '</b> 次：' +
+        '差额来自 method 没被识别的事件（数据库 method 枚举与页面 data-act 不一致）。' +
+        '这行是埋点健康度的一部分，不是「其他」分类。</p>')
   }
 
   /* ===================== D 内容表现 ===================== */
@@ -405,9 +416,12 @@
 
   function streamDetail(e) {
     var p = e.props || {}
+    // via=doc：文档型成果的「查看原文」跳的是本站托管地址，dest_host 就是自己，
+    // 光看域名会误读成「跳回站内」，所以先把这个维度说清楚
+    if (p.via === 'doc') return '站内文档'
     if (p.method) return '方式 ' + p.method + (p.degrade ? '（降级）' : '')
     if (p.dest_host) return '去向 ' + p.dest_host
-    if (p.position) return '第 ' + p.position + ' 张 · ' + (p.view_mode || '')
+    if (p.position) return '第 ' + p.position + ' 张'
     if (p.to) return '→ ' + p.to
     if (p.landing) return '落地 ' + p.landing
     if (p.kind) return p.kind + (p.msg ? ' · ' + String(p.msg).slice(0, 40) : '')
@@ -448,7 +462,12 @@
     var versionSum = (h.versions || []).reduce(function (a, b) { return a + b.n }, 0)
     var drops = h.drops || {}
     var dropTotal = Object.keys(drops).reduce(function (a, k) { return a + drops[k] }, 0)
-    var DROP_LABEL = { bad_event: '不认识的事件名', debounce: '3 秒内重复', session_cap: '超单会话上限' }
+    var DROP_LABEL = {
+      bad_event: '不认识的事件名',
+      debounce: '3 秒内重复',
+      session_cap: '超单会话上限',
+      rate_limit: '单 IP 频控',
+    }
     var cells = [
       {
         k: '埋点覆盖率', tag: cov === null ? '无数据' : (cov >= 0.95 ? '正常' : '偏低'),
@@ -458,7 +477,7 @@
       },
       {
         k: '被丢弃事件', tag: dropTotal ? '有' : '无',
-        v: fmt(dropTotal), s: '频控 / 白名单 / 去抖合计', bad: false
+        v: fmt(dropTotal), s: 'IP 频控 / 白名单 / 去抖合计', bad: false
       },
       {
         k: '机器人流量', tag: h.botEvents ? '已剔除' : '无',
@@ -480,7 +499,11 @@
       '注意：同会话 3 秒内重复的客户端 page_view 会被去抖，连续快速刷新时覆盖率会短暂偏低，这不是数据丢失。' +
       (dropTotal ? '<br>本期丢弃明细：' + Object.keys(drops).map(function (k) {
         return esc(DROP_LABEL[k] || k) + ' ' + drops[k]
-      }).join(' · ') : '')
+      }).join(' · ') : '') +
+      (drops.rate_limit
+        ? '<br>单 IP 频控命中说明同一个出口 IP（公司网、校园网、运营商 NAT）在 1 分钟内发了超过 60 次上报：' +
+          '那批事件被静默丢弃，已在这里记账。人数不多时可以忽略，持续偏高才需要放宽阈值。'
+        : '')
 
     bars('versions', h.versions, versionSum, false)
     if (!versionSum) $('versions').innerHTML = emptyBox('还没有带版本号的事件', '')

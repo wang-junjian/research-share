@@ -81,6 +81,7 @@ db/05-founder-admin.sql    初始管理员：is_founder 列、is_founder()、任
 db/06-doc-items.sql        文档型成果：kind/doc_html 两列 + CHECK，agent_upsert_item 升级
 db/07-funnel-interacted.sql     漏斗 interacted 口径收窄为只计 select_content（v2）
 db/08-track-event-overload.sql  收掉 track_event 旧签名重载 + 权限收敛
+db/09-analytics-fixes.sql       分享 method 补 copy_src、文档型跳转加 via、频控丢弃计数（v3）
 ```
 
 **3. 初始管理员**
@@ -227,14 +228,16 @@ group by e.session_id
 | `page_view` | 页面加载（**客户端与服务端各记一条**） | `page`、`source` |
 | `view_item` | 打开详情页 | `item_id` |
 | `select_content` | 列表页点击卡片 | `item_id` |
-| `outbound_click` | 点击「查看原文」 | `item_id` |
-| `share` | 点击任一分享按钮 | `method`（5 个值） |
+| `outbound_click` | 点击「查看原文」（含托管文档） | `item_id`、`via`（文档型为 `doc`） |
+| `share` | 点击任一分享按钮 | `method`（6 个值） |
 | `error` | 前端捕获到异常 | `code` |
 | `content_publish` | 内容发布 | `item_id` |
 
 `page_view` 记两条是有意的：服务端那条代表「页面确实被送到了浏览器」，客户端那条代表「脚本确实跑起来了」。两者之比就是**埋点覆盖率** —— 如果只有客户端一条，脚本因报错没加载时你什么都看不到，数据会静默变少。
 
 服务端那条**刻意不带 `session_id`**。带上它会撞掉客户端那条的 3 秒去抖，覆盖率恒为 1，这个指标就废了。
+
+会话 id 有**两份存储**：标签页级存储为主、cookie 兜底（v3 起）。只用标签页级存储的话，新开一个标签页就会产生一条新会话 —— 会话数虚高、页均浏览（PV ÷ 会话）偏低、漏斗的「首页有交互」和「详情页浏览」还会被切到两个会话里。cookie 里同时带最后一次活动时间，所以「30 分钟不活动即切新会话」的规则不受影响。
 
 设计细节与口径定义见 [docs/analytics.md](docs/analytics.md)。
 
@@ -281,7 +284,7 @@ npm install && npm start     # 演示模式，先确认界面能跑
 
 要接上真实数据：
 
-1. 接入云服务，按顺序执行 `db/01` → `db/08`（`db/05` 末尾的初始管理员 user_id 先换成你自己的）
+1. 接入云服务，按顺序执行 `db/01` → `db/09`（`db/05` 末尾的初始管理员 user_id 先换成你自己的）
 2. 填 `.env`：`CLOUD_ENDPOINT`、`CLOUD_PUBLISHABLE_KEY`、`SITE_URL`
 3. 发布 → 得到 `https://<你的前缀>.app.workbuddy.host`
 4. **再发布一次**：把 `CLOUD_ENDPOINT` 和 `SITE_URL` 改成上一步拿到的域名
@@ -343,6 +346,6 @@ git clone https://github.com/wang-junjian/research-share.git
 cd research-share && npm install && npm start
 ```
 
-Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/08`, fill in `.env`, and put your own user id in the founder seed at the end of `db/05` before running it.
+Runs in read-only demo mode with sample data when no cloud credentials are configured. To connect real data, apply `db/01` → `db/09`, fill in `.env`, and put your own user id in the founder seed at the end of `db/05` before running it.
 
 Key design decisions are documented in Chinese above and in [`docs/analytics.md`](docs/analytics.md).

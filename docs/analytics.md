@@ -38,7 +38,7 @@
 | **公参 + 事件私有属性分离** | 埋点规范通用做法 | `visitor_id / session_id / device / ref_kind / app_version` 等公参由采集层统一注入，业务代码不手传 |
 | **关键事件双端埋点**：客户端补交互细节，服务端保数据完整 | 行业标准（客户端埋点会被 JS 失败/广告拦截吃掉） | `page_view` **两端都埋**：SSR 渲染时服务端写一条权威记录，客户端再补一条带身份的记录。两者之差 = 埋点覆盖率（§9-J） |
 | ~~GA4 enhanced measurement 的 scroll / engaged session 口径~~ | GA4 | **本轮未采用**（你选择不采停留时长与滚动深度）。留作将来加回「有效阅读数」时的现成口径 |
-| **用 `share` + `method` 维度，而不是 5 个事件名** | GA4 recommended events (`share`) | 5 个分享按钮 = 1 个事件 × 5 个 method 值，看板天然可分组 |
+| **用 `share` + `method` 维度，而不是 6 个事件名** | GA4 recommended events (`share`) | 6 个分享按钮 = 1 个事件 × 6 个 method 值，看板天然可分组 |
 | **漏斗 + 留存 + 来源归因三件套** | AARRR / 内容站分析惯例 | 看板 D/E/F/H 区块 |
 | **HEART 框架的「投入度」维度** | Google HEART | 北极星不取 PV，取最接近「真读进去了」的动作（见 §3） |
 | **埋点数据质量四维：准确/完整/一致/可追溯** | 埋点治理实践 | `app_version` 公参 + §9-J 健康度面板 + 断流预警 |
@@ -68,7 +68,7 @@
 ```sql
 create table if not exists public.research_events (
   id           bigserial primary key,
-  occurred_at  timestamptz not null default now(),   -- 事件发生时间（客户端为触发时刻，服务端为处理时刻）
+  occurred_at  timestamptz not null default now(),   -- 事件落库时刻（数据库 now()），见 §14.1 第 9 条
   event        text not null,                        -- 白名单事件名，见 §5
   source       text not null default 'client',       -- client | server
   app_version  text not null default 'v1',           -- 埋点版本，改口径时递增，可追溯
@@ -181,13 +181,17 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 | 2 | `page_view` | page_view | 页面 `load` 后（客户端）／SSR 渲染时（服务端） | `title` | **S + C** |
 | 3 | `view_item` | view_item | 详情页可见（同会话同条目 3 秒内去抖） | `item_id, from` | C |
 | 4 | `select_content` | select_content | 首页卡片点击后跳转前 | `item_id, position` | C |
-| 5 | `outbound_click` | click (outbound) | 点「查看原文 ↗」或详情页原文链接 | `item_id, dest_host` | C |
+| 5 | `outbound_click` | click (outbound) | 点「查看原文 ↗」或详情页原文链接 | `item_id, dest_host, via` | C |
 | 6 | `share` | **share** | 点任一分享按钮（成功或降级都记） | `method, degrade, item_id` | C |
 | 7 | `error` | — | `window.onerror` / 资源加载失败 / 服务端 5xx | `kind, msg` | S + C |
 | 8 | `content_publish` | — | 新成果落库成功后（`research_items` 的 AFTER INSERT 触发器） | `item_id` | **S** |
 
-`share` 的 5 个 `method` 取值，与现有按钮一一对应：`copy_link` / `copy_text` / `show_poster` / `copy_poster` / `copy_poster_link`。
-—— 这一条会直接回答一个悬了很久的问题：**5 个分享按钮里，哪几个是真的被用了、哪几个是摆设。**
+`share` 的 6 个 `method` 取值，与详情页按钮一一对应（顺序即页面顺序）：`copy_poster` / `show_poster` / `copy_src` / `copy_link` / `copy_poster_link` / `copy_text`。
+—— 这一条会直接回答一个悬了很久的问题：**6 个分享按钮里，哪几个是真的被用了、哪几个是摆设。**
+（`copy_src` 是**复制原文链接**，v3 前漏在 method 白名单外，导致它的点击不进效力表、却计入分享总数。这条链现在由 `test/track-schema.test.js` 钉住五处口径。）
+
+`outbound_click` 的 `via` 只有一种取值 `doc`：文档型成果的原文就托管在本站（`/item/N/doc`），
+「点开原文」这个动作不跨域。不带这个维度，文档型条目的北极星会恒为 0（见 §14.1 第 8 条）。
 
 **本轮明确不采集**：滚动深度（`scroll`）、浏览时长（`engaged_read`）——按你的选择。
 
@@ -211,12 +215,12 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 | `session_id` | 随机 22 位 | 30 分钟不活动即新建 |
 | `device` / `os` / `browser` | 枚举 | 由 UA 解析，服务端统一做（客户端只负责送 UA） |
 | `ref_kind` | `wechat\|zhihu\|search\|direct\|internal\|other` | 服务端归类，避免客户端口径漂移 |
-| `app_version` | `v2` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比（v2：下线 `change_view_mode`）。单一来源在 `lib/constants.js`（共享常量）：客户端与 SSR 同读一处，只改它 |
+| `app_version` | `v3` | 埋点版本号。**改口径必须递增**，否则跨版本趋势不可比（v2：下线 `change_view_mode`；v3：会话跨标签页复用、`outbound_click` 覆盖托管文档、分享 method 补 `copy_src`）。单一来源在 `lib/constants.js`（共享常量）：客户端与 SSR 同读一处，只改它 |
 | `page` | 路径 | 不含 query，避免把搜索词/令牌带进库 |
 
 ### 5.3 `props` 白名单（防事件表被当垃圾场）
 
-只接受：`method`(enum) `to`(enum) `view_mode`(enum) `position`(int 0–200) `dest_host`(host ≤64) `from`(enum) `kind`(enum) `msg`(≤120 字) `landing`(路径) `degrade`(bool) `q`(≤60 字，后台搜索用)。
+只接受：`method`(enum) `to`(enum) `view_mode`(enum) `position`(int 0–200) `dest_host`(host ≤64) `from`(enum) `kind`(enum) `msg`(≤120 字) `landing`(路径) `degrade`(bool) `via`(enum: `doc`) `q`(≤60 字，后台搜索用)。
 （`to` / `view_mode` 是已下线的 `change_view_mode` 与旧版 `select_content` 的历史键，白名单保留以兼容滞留的缓存页面；v2 客户端不再发送。）
 其余键**静默丢弃**。枚举类字段值不在表内的，丢弃该键而非整条事件。
 （`degrade` 是 `share` 用来标记「浏览器剪贴板不可用、退化成手动长按」的布尔位，看板的分享效力表要用它。）
@@ -278,7 +282,7 @@ cloud.database.rpc('analytics_dashboard', { p_days: 30 })
 | 手段 | 做法 |
 |---|---|
 | Bot 过滤 | UA 正则（`bot\|spider\|crawl\|preview\|headless`）+ `navigator.webdriver` + 无 `sec-fetch-*` 头的请求，标 `is_bot=true`（**标记而非丢弃**，看板可切换查看） |
-| 频控 | 单 IP 60 次/分钟、单会话 500 条；超出静默丢弃并计数（看板显示丢弃量） |
+| 频控 | 单 IP 60 次/分钟、单会话 500 条；超出静默丢弃并计数：会话级的三档由 `track_event()` 内部记，IP 频控由应用层聚合后调 `track_drop()` 记 `rate_limit`（v3 起；此前这条丢弃完全不计数，看板永远显示「丢弃 0」） |
 | 去抖 | 同 (session, event, item) 3 秒窗口去重 |
 | 排除自己人 | 管理员在后台点一次「排除本机」→ 该 `visitor_id` 写入 `analytics_exclude` 表，看板默认剔除；再点一次取消。**P0 就要有**：否则第一天的数据就是你自己刷出来的 |
 | 代理/预览 | 只允许 `Origin`/`Referer` 为本站或空（`sendBeacon` 可能不带 Referer）；托管平台的临时预览域名直接丢弃 |
@@ -483,6 +487,44 @@ resize 后空态必须仍是空态（`trendEmpty && trendRects === 0 && hourlyEm
 
 教训与 §14.1 第 4 条（`session_end`）同款：事件下线是一个三件套——前端停发、口径版本递增、
 看板函数与文档同步，少一件就会留下一处自相矛盾的描述。
+
+### 8. 看板审计抓到的五处「不报错但算错」（v3，2026-11）
+
+这一轮不是加功能，是把**已经在跑但算错了**的口径修回来。共同点是：页面不报错、接口 200、
+事件也确实落库了 —— 只有把「页面上的按钮」和「数据库的白名单」逐条对照才看得出来。
+
+| # | 缺陷 | 表现 | 修法 |
+|---|---|---|---|
+| 1 | `method` 白名单缺 `copy_src` | 详情页有 6 个分享按钮，效力表只有 5 行；`overview.shares` 用 `count(*)` 含它，明细不含 → 总数 ≠ 明细之和，UI 上看不出 | `db/09` 白名单补 `copy_src`、效力表补一行；`test/track-schema.test.js` 钉住「页面 data-act → share.js 分支 → 采集层转换 → 白名单 → 效力表」五处闭合 |
+| 2 | `outbound_click` 只认跨域 | 文档型成果的原文托管在本站（`/item/N/doc`），跳转不跨域 → 这类条目的北极星**恒为 0**，还会被「点开不跳转」标签误判成内容问题 | 判定改为「跨域 **或** 命中 `/item/N/doc`」，带 `via=doc`；props 白名单放行 `via` |
+| 3 | 托管文档页完全没有埋点 | 该页按 CSP 沙箱不加载 `track.js`，服务端也刻意不埋（理由写的是「详情页会双倍计数」——而详情页早就不内嵌 iframe 了，前提已消失）→ 文档阅读是纯黑盒 | 托管路由补服务端 `page_view`（带 `itemId`）；覆盖率分母在 `analytics_dashboard` 里 `page not like '%/doc'` 排除它，否则一个天然没有客户端事件的页面会把覆盖率压低 |
+| 4 | 会话 id 只存在标签页级存储 | 新开一个标签页就是一条新会话（cookie 里写了会话却从没人读）→ 会话数虚高、页均浏览偏低、漏斗中间那级流失凭空变大 | 读取顺序改为「标签页存储 → cookie」，且 cookie 值带 `lastAt`，否则过期会话会被续上 |
+| 5 | IP 频控丢弃不计数 | 与 §8 的要求相反：看板永远显示「丢弃 0」，NAT 后面的真实流量被截断也看不出来 | 新增 `track_drop()`（只接受 `rate_limit`），应用层内存聚合 15 秒/200 条后一次性写入 |
+
+另外两处口径拉平：`versions` 面板补 `not is_bot` 与自己人排除（此前与其它所有指标不同源）；
+KPI 卡右下角的 `n=` 原先填的是**指标值本身**（「访客数」卡显示 `n=访客数`，等于没有信息），
+改为行为类指标标会话数、率类指标标分母 `view_item`。
+
+> 口径版本随之 v2 → v3。**v3 之前的会话数、页均浏览、原文跳转率不能与本版直接比较**：
+> 前两个因为会话切分变细而系统性偏，第三个因为文档型条目从 0 变成真实值。
+
+### 9. `occurred_at` 是落库时刻，不是触发时刻
+
+§4.1 原注释写的是「客户端为触发时刻，服务端为处理时刻」，实现从来没有兑现：客户端确实
+在事件上打了 `t`，但 `lib/track.js` 组包时不读它，`track_event()` 也没有对应参数 ——
+时间戳一律是数据库 `now()`。
+
+不补的理由：批量上报最多攒 10 条或 3 秒，误差上限就是 3 秒；而一旦开始信任客户端时间，
+就要面对访客时钟错乱（手机时间设错、跨时区、时区伪造）污染时序的风险 —— 为了 3 秒精度
+引入一个不可控的输入不划算。**结论是把注释改成事实，而不是把代码改成注释的样子。**
+真需要毫秒级顺序时再加 `p_occurred_at`，并同时加「与库时间差超过 ±5 分钟即丢弃该字段」的护栏。
+
+### 10. 404 页不埋 `page_view`：这是取舍，不是遗漏
+
+404 页与 `/og/:id.png` 至今没有 `page_view`。前者是刻意的（错误页的请求量说明不了访问意图，
+反而会把「爬虫猜 URL」算成流量），但它有一个代价：**旧链接失效后没有任何信号**。
+真要看，加一个 `error` 事件（`kind=not_found`）比给 404 页埋 `page_view` 更贴切 —— 事件字典里
+`error` 已经存在，只是目前只从客户端上报。留作 P1。
 
 ### 关于 `dashboard-preview.html`
 
