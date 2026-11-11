@@ -145,6 +145,13 @@
   document.addEventListener('click', function (e) {
     try {
       var el = e.target
+      // 刻意不计入任何事件的点击：容器带 data-track-skip 时整条放行。
+      // 目前的唯一用处是顶栏那个外部应用链接（lib/render.js 的 layout）：
+      // 它是跨域外链，不拦就会被下面的外链分支记成 outbound_click，而看板的
+      // 「原文跳转率」= outbound_click ÷ view_item —— 顶栏的一次导航点击会让
+      // 这个比率超过 100%，把入口误报成转化。判断放在所有分支之前，避免
+      // 后续新增分支时又漏掉一处。
+      if (el.closest && el.closest('[data-track-skip]')) return
       // 分享按钮：一个事件 + method 维度（对齐 GA4 recommended event share）
       var shareBtn = el.closest && el.closest('.share-act[data-act]')
       if (shareBtn) {

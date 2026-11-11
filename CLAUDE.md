@@ -30,6 +30,7 @@ npm run smoke                          # Agent API 冒烟测试（需要 token�
 - **文档型成果的请求体不能含 `<script` 或内联事件属性**（`onclick=` 等），边缘 WAF 直接 403 拦截页，请求到不了应用（ADR-0004）。
 - **`og:image` 必须是绝对 URL 且来自显式配置的 `SITE_URL`**，不能拼请求 `Host` 头（反代后是内网地址）。
 - **服务端 `page_view` 埋点刻意不带 `session_id`**，否则会撞掉客户端那条的 3 秒去抖，埋点覆盖率指标作废（`docs/analytics.md`）。
+- **顶栏外链（`SITE_LINK_*`，`lib/render.js` 的 layout）必须带 `data-track-skip`**：它是跨域外链，`assets/track.js` 的点击委托会把它记成 `outbound_click`，而看板的「原文跳转率」= `outbound_click ÷ view_item` —— 顶栏的一次导航点击就能让这个比率超过 100%，把入口误报成转化。新增任何「非成果内容」的外链都要跟着加这个属性（判断放在委托函数最前面，避免新增分支时漏掉）。
 - **分享按钮的 `data-act` 与数据库 `method` 白名单是两处枚举**（DOM 用连字符、事件用下划线）：改按钮必须同时改 `db/09` 的 `track_event` 白名单与分享效力表 values，否则事件照落库、props 被静默清空，看板「分享总数 ≠ 明细之和」。`test/track-schema.test.js` 钉住这五处闭合。
 - **会话 id 有标签页级存储与 cookie 两份**（cookie 兜底跨标签页，值带 `lastAt`）：只改一处会让「新开标签页 = 新会话」复发，会话数虚高、页均浏览偏低、漏斗被切碎。
 - **文档型成果的「原文」是本站托管地址**（`/item/N/doc`）：只按跨域判外链会让这类条目的北极星恒为 0，须带 `via=doc`；该页不加载 `track.js`，服务端 `page_view` 是唯一证据，且覆盖率分母要排除它。
