@@ -954,6 +954,15 @@ body.page-pub .topbar-share b { color: var(--pub-accent); font-weight: 600; }
   .mast-fact:nth-child(3) { border-left: 0; }
   .mast-fact:nth-child(n+3) { border-top: 1px solid var(--paper-line); }
   .feat-title { font-size: 30px; }
+  /* 顶栏窄屏：右侧要同时容纳「外部应用 + ＋分享 + 登录」三个胶囊，375px 塞不下。
+     做法是只在**配了外链的部署**（body.has-ext）隐藏顶栏站名——首页刊头本来就有
+     大字站名，详情页只剩 logo「研」仍能回首页，代价远小于把入口挤成省略号。
+     加 has-ext 限定是为了不动别人 clone 出来的站点，也不动后台顶栏。
+     下面的省略号是可压缩兜底：320px + 登录态那种极端组合下宁可截断也不撑破。 */
+  body.has-ext .brand-name { display: none; }
+  .topbar-ext { flex: 0 1 auto; min-width: 0; padding: 0 10px; }
+  .topbar-ext span { overflow: hidden; text-overflow: ellipsis; }
+  .topbar-share { margin-right: 0; }
   .cols { grid-template-columns: 1fr; column-gap: 0; }
   .article { padding-top: 32px; }
   .detail-title { font-size: 31px; }

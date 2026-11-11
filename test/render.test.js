@@ -65,6 +65,40 @@ test('renderList 渲染刊头指标、头条与链接', () => {
   assert.match(html, /<div class="mast-sub">站点描述<\/div>/)
 })
 
+test('layout 无 site.link 时顶栏不输出外链', () => {
+  assert.doesNotMatch(layout(site, { title: 'T', description: 'D', body: '' }), /topbar-ext/)
+  assert.doesNotMatch(renderList(site, [item]), /topbar-ext/)
+  // 显式 null 同义（server.js 装配层的取值）
+  assert.doesNotMatch(renderList({ ...site, link: null }, [item]), /topbar-ext/)
+  // 没有链接就不带 has-ext，窄屏站名照常显示
+  assert.match(layout(site, { title: 'T', description: 'D', body: '' }), /<body class="page-pub">/)
+})
+
+test('layout 配置 site.link 时顶栏输出外链：顺序为 外链 → 分享 → 登录', () => {
+  const link = { url: 'https://other.example.com/?sharecode=ABC', title: '另一款应用' }
+  const html = layout({ ...site, link }, { title: 'T', description: 'D', body: '', shareEntry: true })
+  // 分享参数原样保留（目标应用的访问凭证不能丢），并带 data-track-skip
+  assert.match(html, /<a class="topbar-link topbar-ext" href="https:\/\/other\.example\.com\/\?sharecode=ABC" rel="noopener" data-track-skip>/)
+  assert.match(html, /<span>另一款应用<\/span>/)
+  const at = (s) => html.indexOf(s)
+  assert.ok(at('topbar-ext') > -1 && at('topbar-ext') < at('topbar-share'), '外链应在「分享」之前')
+  assert.ok(at('topbar-share') < at('data-auth-chip'), '「分享」应在「登录」之前')
+  // body 带 has-ext：窄屏靠它让顶栏站名让位（见 style.css 720 断点）
+  assert.match(html, /<body class="page-pub has-ext">/)
+  // 详情页共用 layout，因此同样带上这个入口
+  assert.match(renderDetail({ ...site, link }, item), /topbar-ext/)
+})
+
+test('site.link 的 title/url 也走转义', () => {
+  const html = layout(
+    { ...site, link: { url: 'https://e.com/?a=1&b=2', title: '<script>x</script>' } },
+    { title: 'T', description: 'D', body: '' },
+  )
+  assert.doesNotMatch(html, /<span><script>/)
+  assert.match(html, /&lt;script&gt;/)
+  assert.match(html, /href="https:\/\/e\.com\/\?a=1&amp;b=2"/)
+})
+
 test('renderDetail 含 canonical、og:image 与分享 data-*', () => {
   const html = renderDetail(site, item)
   assert.match(html, /<link rel="canonical" href="https:\/\/example\.com\/item\/7">/)

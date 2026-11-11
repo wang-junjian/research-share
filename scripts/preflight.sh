@@ -30,6 +30,18 @@ for key in CLOUD_ENDPOINT CLOUD_PUBLISHABLE_KEY SITE_URL; do
 done
 ok ".env 三项配置齐全"
 
+# 1b. 顶栏外链：半配置是最坏的情况 —— 它不报错、也不渲染，
+# 只会让人以为「改了没生效」，然后去查 CSS 和缓存。
+LINK_URL="$(grep -E '^SITE_LINK_URL=' .env | cut -d= -f2- || true)"
+LINK_TITLE="$(grep -E '^SITE_LINK_TITLE=' .env | cut -d= -f2- || true)"
+if [ -n "${LINK_URL}" ] || [ -n "${LINK_TITLE}" ]; then
+  [ -n "${LINK_URL}" ] && [ -n "${LINK_TITLE}" ] \
+    || fail "SITE_LINK_URL 与 SITE_LINK_TITLE 必须同时配：只配一项时顶栏外链静默不渲染"
+  ok "顶栏外链已配置：${LINK_TITLE}"
+else
+  ok "顶栏外链未配置（按设计不渲染）"
+fi
+
 # 2. 语法：沙箱里 npm start 之前不会有人替你发现这个
 node --check server.js
 node --check og-image.js
@@ -53,8 +65,15 @@ COUNT="$(echo "$HEALTH" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on(
 ok "读到 ${COUNT} 条数据"
 
 # 4. 演示模式的兜底判定：首页注入的 PUBLIC_CONFIG 里 demo 为 true 就说明配置没生效
-curl -sf -m 5 "$BASE/" | grep -q '"demo":true' && fail "服务处于演示模式，.env 没有生效"
+HOME_HTML="$(curl -sf -m 5 "$BASE/")"
+echo "$HOME_HTML" | grep -q '"demo":true' && fail "服务处于演示模式，.env 没有生效"
 ok "不是演示模式"
+
+# 5. 顶栏外链配了就必须真渲染出来（配置生效了但模板没输出，同样是静默失败）
+if [ -n "${LINK_URL}" ]; then
+  echo "$HOME_HTML" | grep -q 'topbar-ext' || fail "配了 SITE_LINK_URL 但首页顶栏没有外链"
+  ok "首页顶栏外链已渲染"
+fi
 
 echo
 echo "全部通过，可以发布。"

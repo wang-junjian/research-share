@@ -280,6 +280,11 @@ async function main() {
   const PUBLISHABLE_KEY = process.env.CLOUD_PUBLISHABLE_KEY || ''
   const SITE_NAME = process.env.SITE_NAME || '研究成果'
   const SITE_DESC = process.env.SITE_DESC || '持续更新的研究成果卡片：标题、概览与原文链接。'
+  // 顶栏外链（可选）：右侧一个胶囊链接，指向同一位作者的另一款应用。
+  // 走环境变量而不是写进模板，是因为它属于「这个部署」的私事 —— 别人的 clone
+  // 不该继承我的链接。url 与 title 缺任一项就整条不渲染（见 lib/render.js）。
+  const SITE_LINK_URL = process.env.SITE_LINK_URL || ''
+  const SITE_LINK_TITLE = process.env.SITE_LINK_TITLE || ''
   // 站点公开 URL：用于 og:url / canonical / og:image。
   // 必须显式指定，不能靠请求的 Host 头拼：反向代理后面 Host 往往是内网地址，
   // 拼出来的 og:image 会让微信抓不到图（表现为分享卡片没有缩略图）。
@@ -315,6 +320,10 @@ async function main() {
     desc: SITE_DESC,
     url: SITE_URL,
     favicon: FAVICON,
+    // 顶栏外链：null 时 render 不输出任何节点（不是隐藏，是不渲染）
+    link: SITE_LINK_URL && SITE_LINK_TITLE
+      ? { url: SITE_LINK_URL, title: SITE_LINK_TITLE }
+      : null,
     publicConfigJson: DEMO ? null : PUBLIC_CONFIG_JSON,
   }
 
