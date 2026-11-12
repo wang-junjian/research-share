@@ -84,8 +84,9 @@
    * 发给别人就是平台的「链接不完整」拦截页。码由服务端经 PUBLIC_CONFIG 下发
    * （server.js 的 SITE_SHARE_CODE），没配就退化成干净地址。
    * 口径对照服务端 lib/share-url.js，改规则两边同步。 */
+  App.shareCode = function () { return (PUBLIC_CONFIG && PUBLIC_CONFIG.shareCode) || '' }
   App.shareUrl = function (path) {
-    var code = (PUBLIC_CONFIG && PUBLIC_CONFIG.shareCode) || ''
+    var code = App.shareCode()
     var url = location.origin + (path || '/')
     if (!code) return url
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'sharecode=' + encodeURIComponent(code)
@@ -348,10 +349,13 @@
       setBusy(true)
       hint.className = 'auth-hint'
       hint.textContent = ''
-      // 回调必须落在站点根路径（平台 Relay 规则），业务参数放 query
+      // 回调必须落在站点根路径（平台 Relay 规则），业务参数放 query。
+      // 分享码必须一起带上：闸门只认 ?sharecode=<码>，回调地址若漏了它，
+      // 登录完成的那一刻会被弹回平台的「链接不完整」拦截页（cookie 被禁的
+      // 浏览器尤其明显，能进来的第一批访客全是靠 URL 上的码）。
       var back = new URL(location.href)
       back.pathname = '/'
-      back.search = '?next=admin'
+      back.search = (App.shareCode() ? '?sharecode=' + encodeURIComponent(App.shareCode()) + '&' : '?') + 'next=admin'
       back.hash = ''
       cloud.auth.signInWithOAuth({ provider: provider, redirectTo: back.toString() }).then(function (res) {
         if (res && res.error) {
