@@ -291,6 +291,8 @@ npm install && npm start     # 演示模式，先确认界面能跑
 
 第 4 步不能省，原因有两个：云服务的 `endpoint` 就是这个应用域名，而域名要发布后才存在；`SITE_URL` 决定 `og:image` 的绝对地址，写错微信就抓不到封面图。
 
+**第 5 步：把分享码填进 `SITE_SHARE_CODE`。** 平台的发布域名前有一道防爬闸门，只认 `?sharecode=<码>`：干净域名对外一律 403「链接不完整」，连 `/og/:id.png`、`/api/*` 都被拦（闸门在应用之前）。发布结果里给你的链接形如 `https://<域名>/?sharecode=XXXX`，把那串码填进 `.env` 的 `SITE_SHARE_CODE`，之后 canonical / og:image / 详情页「复制链接」/ 海报二维码 / 后台展示的托管地址都会自动带上它。不填的后果很隐蔽：**站内自己点得开**（浏览器已种 30 天 cookie），**复制出去给别人就是拦截页**。
+
 另外 `/admin` 的登录和写操作是浏览器直连云服务的，请求带的是**站点域名**的 `Origin`，白名单里没有该域名会失败。这条建议在部署后自己登录一次确认。
 
 ### 发布后的验收
@@ -300,7 +302,15 @@ curl -s https://<你的域名>/api/health              # count 应等于你库�
 curl -s https://<你的域名>/og/1.png -o /dev/null -w '%{http_code} %{size_download}\n'   # 200，约 5.9KB
 ```
 
-只看 200 是不够的——演示模式也返回 200。
+只看 200 是不够的——演示模式也返回 200。**更要紧的是「别人打不打得开」**，这一条本地永远测不出来（本地没有闸门）：
+
+```bash
+# 干净域名对外应有 403（有闸门时）；带码必须 200
+curl -s -o /dev/null -w '%{http_code}\n' "https://<你的域名>/item/1"
+curl -s -o /dev/null -w '%{http_code}\n' "https://<你的域名>/item/1?sharecode=<码>"
+# 页面里发出去的地址是否都带了码
+curl -s "https://<你的域名>/item/1?sharecode=<码>" | grep -o 'data-url="[^"]*"'
+```
 
 ### 微信分享的三条现实约束
 

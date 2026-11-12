@@ -81,5 +81,35 @@ if [ -n "${LINK_URL}" ]; then
   ok "首页顶栏外链已渲染，且带 data-ext=topbar（可统计）"
 fi
 
+# 6. 分享码：发布域名前面有一道防爬闸门，只认 ?sharecode=<码>。
+# 漏了它不会报错 —— 站内点得开（自己浏览器已种 cookie），但复制出去的链接、
+# 印成二维码的海报、微信抓取的封面图，对别人全都是平台的「链接不完整」拦截页。
+# 这是本站最贵的一种静默失败：内容全对，只有别人打不开。
+SHARE_CODE="$(grep -E '^SITE_SHARE_CODE=' .env | cut -d= -f2- || true)"
+SITE_URL_VAL="$(grep -E '^SITE_URL=' .env | cut -d= -f2- || true)"
+if [ -z "${SHARE_CODE}" ] && printf '%s' "${SITE_URL_VAL}" | grep -q '\.app\.workbuddy\.host'; then
+  fail "SITE_URL 是 WorkBuddy 发布域名，但 SITE_SHARE_CODE 为空：
+   平台闸门只认 ?sharecode=<码>，现在复制出去的链接/二维码对别人都是 403。
+   把应用分享链接里的 sharecode 值填进 .env 的 SITE_SHARE_CODE 再发布。"
+fi
+if [ -n "${SHARE_CODE}" ]; then
+  echo "$HOME_HTML" | grep -q "canonical\" href=\"${SITE_URL_VAL}/?sharecode=${SHARE_CODE}\"" \
+    || fail "配了 SITE_SHARE_CODE 但首页 canonical 没带上它"
+  # 取一条真实条目：详情页的 data-url 是「复制链接」与海报二维码的唯一来源
+  ITEM_ID="$(printf '%s' "$HOME_HTML" | grep -oE '/item/[0-9]+' | head -1 | grep -oE '[0-9]+$' || true)"
+  DETAIL="$(curl -sf -m 5 "$BASE/item/${ITEM_ID:-1}")" || DETAIL=""
+  if [ -n "$DETAIL" ]; then
+    echo "$DETAIL" | grep -q "data-url=\"[^\"]*?sharecode=${SHARE_CODE}\"" \
+      || fail "详情页 data-url 没带分享码：复制链接与海报二维码都会指向打不开的地址"
+    echo "$DETAIL" | grep -q "og:image\" content=\"[^\"]*?sharecode=${SHARE_CODE}\"" \
+      || fail "og:image 没带分享码：微信抓取封面图会撞上平台的 403，卡片没有缩略图"
+    ok "分享码已贯穿 canonical / data-url / og:image"
+  else
+    ok "分享码已配置（详情页取样跳过）"
+  fi
+else
+  ok "未配置分享码（按设计当作没有闸门）"
+fi
+
 echo
 echo "全部通过，可以发布。"

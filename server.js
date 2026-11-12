@@ -289,6 +289,12 @@ async function main() {
   // 必须显式指定，不能靠请求的 Host 头拼：反向代理后面 Host 往往是内网地址，
   // 拼出来的 og:image 会让微信抓不到图（表现为分享卡片没有缩略图）。
   const SITE_URL = process.env.SITE_URL || `http://127.0.0.1:${PORT}`
+  // 分享码（可选）：平台在发布域名前置的防爬闸门只认 ?sharecode=<码>，干净域名
+  // 对外一律 403。凡是「会被别人拿去打开」的地址都必须带上它 —— 页面 canonical、
+  // og:url、og:image、详情页 data-url（复制链接与海报二维码的源）、后台展示的
+  // 托管地址。留空即没有这道闸门（本地开发、别人的 clone 不受影响）。
+  // 它不是密码：码本来就是发给外部读者的，进页面源码无妨。
+  const SITE_SHARE_CODE = process.env.SITE_SHARE_CODE || ''
   const OAUTH_RELAY = process.env.CLOUD_OAUTH_RELAY || 'https://www.workbuddy.cn/v2/as/genie-baas/oauth'
   // 本地排查埋点用：TRACK_DEBUG=1 打开后打印每批的 UA / 判定与每条落库结果
   const TRACK_DEBUG = !!process.env.TRACK_DEBUG
@@ -315,6 +321,9 @@ async function main() {
     // 看板「外部入口」那行要显示入口的名字（如「AI每日要闻」），否则只能写
     // 「顶栏外部入口」。标题本来就在公开页顶栏明示，不是秘密。
     extTitle: SITE_LINK_TITLE,
+    // 浏览器侧拼「本页链接」时同样要带上（assets/cloud.js 的 App.shareUrl）。
+    // 站点由后台与公开页共用，这个值随页面下发，不走额外接口。
+    shareCode: SITE_SHARE_CODE,
   }).replaceAll('<', '\\u003c')
 
   // 传给页面模板 module 的站点配置（lib/render.js 不读环境变量）
@@ -322,6 +331,7 @@ async function main() {
     name: SITE_NAME,
     desc: SITE_DESC,
     url: SITE_URL,
+    shareCode: SITE_SHARE_CODE,
     favicon: FAVICON,
     // 顶栏外链：null 时 render 不输出任何节点（不是隐藏，是不渲染）
     link: SITE_LINK_URL && SITE_LINK_TITLE
@@ -342,7 +352,7 @@ async function main() {
     : createWorkBuddyCloud({ endpoint: ENDPOINT, publishableKey: PUBLISHABLE_KEY })
 
   // 组装三个 deep module：条目存储（数据访问与身份派生）、埋点、Agent API
-  const itemsStore = createItemsStore({ cloud, siteUrl: SITE_URL })
+  const itemsStore = createItemsStore({ cloud, siteUrl: SITE_URL, shareCode: SITE_SHARE_CODE })
 
   const { trackServerPageView, handleTrack } = createTrack({
     salt: process.env.ANALYTICS_SALT || 'research-share/v1/ip',
