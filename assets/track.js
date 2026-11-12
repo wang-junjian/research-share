@@ -16,8 +16,10 @@
  *  4. 所有点击类事件都在这里用委托捕获，业务脚本（share.js 等）保持零改动。
  *  5. 任何异常都被吞掉：埋点永远不该弄坏页面。
  *
- * 本文件负责 7 个事件：session_start / page_view / view_item / select_content /
- * outbound_click / share / error。
+ * 本文件负责 8 个事件：session_start / page_view / view_item / select_content /
+ * outbound_click / ext_click / share / error。
+ * ext_click 是唯一的「单入口专用」事件：只回答「顶栏那个外部应用入口有没有人点」，
+ * 不进北极星、不进漏斗（口径见 db/10-ext-click.sql 与下方点击委托处的注释）。
  * 另外两个不在浏览器侧：
  *   - page_view 由服务端 SSR 再补一条（source='server'，用于算埋点覆盖率）；
  *   - content_publish 由数据库触发器在成果落库时写（event='content_publish'）。
@@ -146,12 +148,24 @@
     try {
       var el = e.target
       // 刻意不计入任何事件的点击：容器带 data-track-skip 时整条放行。
-      // 目前的唯一用处是顶栏那个外部应用链接（lib/render.js 的 layout）：
-      // 它是跨域外链，不拦就会被下面的外链分支记成 outbound_click，而看板的
-      // 「原文跳转率」= outbound_click ÷ view_item —— 顶栏的一次导航点击会让
-      // 这个比率超过 100%，把入口误报成转化。判断放在所有分支之前，避免
-      // 后续新增分支时又漏掉一处。
+      // 这是「非成果内容」的兜底闸门 —— 新增装饰性/导航性外链先加它；
+      // 确认要统计时改挂 data-ext（见下一个分支），两者不要同时挂。
+      // 判断放在所有分支之前，避免后续新增分支时又漏掉一处。
       if (el.closest && el.closest('[data-track-skip]')) return
+
+      // 被统计的外部入口：容器带 data-ext 时记一条专属事件 ext_click。
+      // 它和下面的「外部链接 → outbound_click」回答的是两个问题：
+      //   outbound_click = 本站的转化（读者看完有没有去读原文），北极星的分母之一
+      //   ext_click      = 另一个产品有没有人用（顶栏那个入口是不是摆设）
+      // 共用一个计数器的话，顶栏每被点一次都会让「原文跳转率」的分子变大、
+      // 分母（view_item）不变 —— 一个导航入口就被记成了转化。
+      // flush 必须调：这是同标签页导航，不立刻发就随页面卸载丢掉。
+      var ext = el.closest && el.closest('[data-ext]')
+      if (ext) {
+        push('ext_click', { slot: ext.getAttribute('data-ext') || 'topbar' })
+        flush()
+        return
+      }
       // 分享按钮：一个事件 + method 维度（对齐 GA4 recommended event share）
       var shareBtn = el.closest && el.closest('.share-act[data-act]')
       if (shareBtn) {

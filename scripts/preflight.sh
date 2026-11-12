@@ -72,7 +72,13 @@ ok "不是演示模式"
 # 5. 顶栏外链配了就必须真渲染出来（配置生效了但模板没输出，同样是静默失败）
 if [ -n "${LINK_URL}" ]; then
   echo "$HOME_HTML" | grep -q 'topbar-ext' || fail "配了 SITE_LINK_URL 但首页顶栏没有外链"
-  ok "首页顶栏外链已渲染"
+  # 标记错了不会报错，只会让看板的「外部入口」恒为 0 —— 而 0 次点击长得像
+  # 「没人点」，是最容易被误读成结论的一种失败。
+  echo "$HOME_HTML" | grep -qE 'topbar-ext[^>]*data-track-skip' \
+    && fail "顶栏外链带 data-track-skip，ext_click 会被整条跳过（看板永远显示 0）"
+  echo "$HOME_HTML" | grep -qE 'topbar-ext[^>]*data-ext="topbar"' \
+    || fail "顶栏外链缺 data-ext=topbar，看板的「外部入口」会恒为 0"
+  ok "首页顶栏外链已渲染，且带 data-ext=topbar（可统计）"
 fi
 
 echo
