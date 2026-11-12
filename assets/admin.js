@@ -286,10 +286,11 @@
   function openEditor(row) {
     // 文档型成果（GLOSSARY: 文档型成果）的原文不落库，url 恒为空；
     // 链接位置只读展示派生托管地址（GLOSSARY: 托管地址），表单不能创建/替换文档（第一期）。
-    // admin 与站点同源，托管地址直接由 origin 拼出。
+    // admin 与站点同源，托管地址由 App.shareUrl 拼出（会带上分享码：这个地址
+    // 是给人复制走的，干净域名在闸门后面打不开）。
     // 型别判定与托管地址经 App 的条目公共身份派生（GLOSSARY: 条目公共身份），不自行拼。
     var isDoc = App.isDoc(row)
-    var docUrl = location.origin + App.docPath(row.id)
+    var docUrl = App.shareUrl(App.docPath(row.id))
     var m = App.mountModal(
       '<div class="modal" style="max-width:560px">' +
       '  <div class="modal-head">' +

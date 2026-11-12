@@ -69,13 +69,27 @@
    * 服务端由条目存储（lib/items-store.js）物化派生字段；浏览器侧经 SDK
    * 直连数据面、结构上拿不到物化字段，编号 / 详情页路径 / 托管地址 /
    * 型别判定收在这里，admin / quick-share / analytics 只调用不推导。
-   * itemPath/docPath 返回站内路径：需要完整地址的展示处自行拼
-   * location.origin（当前源，admin 与站点同源）。口径对照服务端
+   * itemPath/docPath 返回站内路径：需要完整地址的展示处用 App.shareUrl 拼
+   * （它会带上分享码，站点在防爬闸门后面时干净地址对外打不开）。口径对照服务端
    * materialize，改规则两边同步。 */
   App.itemNo = function (id) { return 'NO.' + String(id).padStart(3, '0') }
   App.itemPath = function (id) { return '/item/' + id }
   App.docPath = function (id) { return '/item/' + id + '/doc' }
   App.isDoc = function (row) { return !!(row && row.kind === 'doc') }
+
+  /* 站内路径 → 别人能打开的完整地址。
+   * 平台发布域名前有一道防爬闸门，只认 ?sharecode=<码>（干净域名对外 403），
+   * 所以凡是「会被复制/扫码/转发」的地址都要经过这里，别再去拼
+   * location.origin + path —— 那样复制出来的链接，自己点得开（本地已种 cookie），
+   * 发给别人就是平台的「链接不完整」拦截页。码由服务端经 PUBLIC_CONFIG 下发
+   * （server.js 的 SITE_SHARE_CODE），没配就退化成干净地址。
+   * 口径对照服务端 lib/share-url.js，改规则两边同步。 */
+  App.shareUrl = function (path) {
+    var code = (PUBLIC_CONFIG && PUBLIC_CONFIG.shareCode) || ''
+    var url = location.origin + (path || '/')
+    if (!code) return url
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'sharecode=' + encodeURIComponent(code)
+  }
 
   // 把 SDK / PostgreSQL 的错误翻译成人话
   App.msg = function (err) {

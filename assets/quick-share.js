@@ -229,7 +229,7 @@
       '  <div class="qs-done">' +
       '    <span class="qs-done-no">' + no + '</span>' +
       '    <div class="qs-done-title">' + App.esc(title) + '</div>' +
-      '    <div class="qs-done-url">' + App.esc(location.origin + pagePath) + '</div>' +
+      '    <div class="qs-done-url">' + App.esc(App.shareUrl(pagePath)) + '</div>' +
       '    <p class="qs-done-hint">详情页内含完整分享条：复制链接、复制文字、生成海报。</p>' +
       '  </div>' +
       '</div>' +
