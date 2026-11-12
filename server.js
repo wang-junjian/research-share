@@ -312,6 +312,9 @@ async function main() {
     publishableKey: PUBLISHABLE_KEY,
     // 前端据此把「配置缺失」和「演示模式」区分开，给出不同提示
     demo: DEMO,
+    // 看板「外部入口」那行要显示入口的名字（如「AI每日要闻」），否则只能写
+    // 「顶栏外部入口」。标题本来就在公开页顶栏明示，不是秘密。
+    extTitle: SITE_LINK_TITLE,
   }).replaceAll('<', '\\u003c')
 
   // 传给页面模板 module 的站点配置（lib/render.js 不读环境变量）

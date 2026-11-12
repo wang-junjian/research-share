@@ -26,7 +26,9 @@
   var TOP_N = 12 // 内容表现表默认展示多少条
 
   var state = {
-    days: 30,
+    // 默认「今天」：这个看板每天打开时要回答的第一个问题是「今天有人来吗」，
+    // 而不是「这 30 天怎么样」。30 天视图仍在，只是不再是默认值。
+    days: 1,
     data: null,
     loading: false,
     err: '',
@@ -145,7 +147,7 @@
   function drawTrend(D) {
     var host = $('trend')
     var hs = pubStats(D.trend)
-    $('trendNote').innerHTML = hs.pubDays.length
+    var note = hs.pubDays.length
       ? '本期共发布 ' + hs.pubDays.length + ' 条新成果（' + hs.pubDays.join('、') + '）。' +
         '发布次日访客均值 <span class="an-num">' + mean1(hs.nextDay) + '</span>（' + hs.nextDayN + ' 天），' +
         '其余日均值 <span class="an-num">' + mean1(hs.other) + '</span>（' + hs.otherN + ' 天）' +
@@ -153,6 +155,13 @@
           ? ' —— 内容动作与流量的关系就摆在图上看。'
           : ' —— 发布天数太少，这个对照还不足以下结论。')
       : '本期没有新条目发布。'
+    // 一天的窗口里，「发布次日 vs 其余日」在数学上就是 0 天 vs 0 天，
+    // 与其打一行「发布天数太少」，不如直说这张图现在该切到多长。
+    if (D.range.days === 1) {
+      note = '今天只有一天，柱子只有一根 —— 要看形状请切到「近 7 天」。' +
+        (hs.pubDays.length ? '今天发布了 ' + hs.pubDays.length + ' 条新成果。' : '今天没有新条目发布。')
+    }
+    $('trendNote').innerHTML = note
 
     var w = Math.max(300, host.clientWidth || 600), h = 240
     var L = 38, R = 42, T = 14, B = 26
@@ -255,6 +264,50 @@
         '明细合计 <b>' + fmt(listed) + '</b> 次，比总数少 <b>' + fmt(total - listed) + '</b> 次：' +
         '差额来自 method 没被识别的事件（数据库 method 枚举与页面 data-act 不一致）。' +
         '这行是埋点健康度的一部分，不是「其他」分类。</p>')
+  }
+
+  /* ===================== C2 外部入口 ===================== */
+  /* 只回答一个问题：顶栏那个指向另一款应用的入口，有没有人点。
+     刻意不给转化率 —— 分母该用「首页访客」还是「全部访客」没有一个诚实的
+     答案，而在个位数样本上算百分比只会制造结论。绝对数 + 今天 + 最近一次
+     已经足够回答「这个入口是不是摆设」。
+     名字取自 PUBLIC_CONFIG.extTitle（服务端注入的 SITE_LINK_TITLE），不硬编码
+     产品名：同一份看板代码别人 clone 去用，也不该显示成我的产品。 */
+  function extName() {
+    var c = window.PUBLIC_CONFIG || {}
+    return c.extTitle || '顶栏外部入口'
+  }
+
+  function drawExt(D) {
+    var el = $('ext')
+    if (!el) return
+    var X = D.ext
+    // 前端先上线、db/10 还没执行的窗口期：说人话，既不能报错，也不能画成 0 ——
+    // 「0 次点击」会被读成「没人点」，那是把缺数据当成结论。
+    if (!X) {
+      el.innerHTML = emptyBox('这个指标还没开通', '数据库函数还没返回 ext 字段，执行 db/10-ext-click.sql 后出现。')
+      return
+    }
+    var name = extName()
+    if ($('extName')) $('extName').textContent = name
+    if (!X.n) {
+      el.innerHTML = emptyBox('还没有人点过「' + name + '」',
+        '顶栏那个入口的每次点击都会记在这里。一次都没有，说明它还没被用过。')
+      return
+    }
+    // 窗口只有一天时，大数字本身就是「今天」，再标一次「今天 N 次」是同义反复
+    var tag = D.range.days === 1
+      ? '<span class="an-tag is-ok">今天</span>'
+      : (X.today
+        ? '<span class="an-tag is-ok">今天 ' + fmt(X.today) + ' 次</span>'
+        : '<span class="an-tag">今天还没有</span>')
+    el.innerHTML = '<div class="an-pulse">' +
+      '<b>' + fmt(X.n) + '</b><span>次点击</span>' +
+      '<span class="sp" style="flex:1"></span>' + tag + '</div>' +
+      '<p class="an-note" style="margin:8px 0 0">' +
+      fmt(X.sessions) + ' 个会话 · ' + fmt(X.visitors) + ' 位访客' +
+      (X.last ? ' · 最近一次 ' + esc(X.last) : '') +
+      '。按事件计数（同一会话点多次算多次），与上面「原文跳转」不是一套口径。</p>'
   }
 
   /* ===================== D 内容表现 ===================== */
@@ -409,6 +462,7 @@
     select_content: '点卡片',
     change_view_mode: '切视图',
     outbound_click: '跳原文',
+    ext_click: '点外部入口',
     share: '分享',
     error: '前端报错',
     content_publish: '发布新条目'
@@ -419,6 +473,7 @@
     // via=doc：文档型成果的「查看原文」跳的是本站托管地址，dest_host 就是自己，
     // 光看域名会误读成「跳回站内」，所以先把这个维度说清楚
     if (p.via === 'doc') return '站内文档'
+    if (p.slot) return p.slot === 'topbar' ? '顶栏入口' : '入口 ' + p.slot
     if (p.method) return '方式 ' + p.method + (p.degrade ? '（降级）' : '')
     if (p.dest_host) return '去向 ' + p.dest_host
     if (p.position) return '第 ' + p.position + ' 张'
@@ -485,7 +540,7 @@
       },
       {
         k: '事件总量', tag: '窗口内',
-        v: fmt(h.totalEvents), s: D.range.days + ' 天累计', bad: false
+        v: fmt(h.totalEvents), s: D.range.days === 1 ? '今天累计' : D.range.days + ' 天累计', bad: false
       }
     ]
     $('health').innerHTML = cells.map(function (c) {
@@ -565,7 +620,11 @@
     if (!D) return
     var isEmpty = isEmptyData(D)
     var from = D.range.from, to = D.range.to
-    $('rangeSub').textContent = '近 ' + D.range.days + ' 天 · ' + from + ' ~ ' + to + ' · 对照上一周期'
+    // 「近 1 天」是机器的说法，读起来应该是「今天」；同时把重复的日期收掉 ——
+    // days=1 时 from === to，写成「11-12 ~ 11-12」只会让人以为哪里错了。
+    $('rangeSub').textContent = D.range.days === 1
+      ? '今天 · ' + to + ' · 对照昨天'
+      : '近 ' + D.range.days + ' 天 · ' + from + ' ~ ' + to + ' · 对照上一周期'
     $('fresh').innerHTML = '<i class="an-dot"></i>' +
       (D.recent.length ? '最近事件 ' + esc(D.recent[0].t) + ' · ' : '') + '时区 Asia/Shanghai'
 
@@ -575,12 +634,14 @@
       $('trendNote').textContent = ''
       drawFunnel(D)      // 内部会处理 base=0 的空状态
       drawShare(D)
+      drawExt(D)
       drawItems(D)
       drawE(D)
     } else {
       drawTrend(D)
       drawFunnel(D)
       drawShare(D)
+      drawExt(D)
       drawItems(D)
       drawE(D)
     }

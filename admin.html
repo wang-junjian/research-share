@@ -172,9 +172,9 @@
         </div>
         <div class="topbar-spacer"></div>
         <div class="an-range" id="range">
-          <button type="button" data-d="1">今天</button>
+          <button type="button" data-d="1" class="is-on">今天</button>
           <button type="button" data-d="7">近 7 天</button>
-          <button type="button" data-d="30" class="is-on">近 30 天</button>
+          <button type="button" data-d="30">近 30 天</button>
           <button type="button" data-d="90">近 90 天</button>
         </div>
         <span class="an-fresh" id="fresh"><i class="an-dot"></i>时区 Asia/Shanghai</span>
@@ -229,6 +229,18 @@
             <div id="share" style="margin-top:8px"></div>
             <p class="an-note">「降级」= 浏览器剪贴板不可用、退化成弹层让用户手动长按保存。这一列直接回答「5 个按钮里哪几个是摆设」。</p>
           </div>
+        </div>
+
+        <!-- 外部入口：只回答「顶栏那个指向另一款应用的链接有没有人点」。
+             与「原文跳转」刻意分开：那个是本站转化，这个是另一个产品有没有人用。 -->
+        <div class="an-card" style="margin-top:14px">
+          <div class="an-legend" style="justify-content:space-between">
+            <span>外部入口 · <span id="extName">—</span></span>
+            <span class="an-tag">不计入原文跳转率</span>
+          </div>
+          <div id="ext" style="margin-top:8px"></div>
+          <p class="an-note">顶栏那个链接每被点一次记一条 ext_click。它统计的是「那个产品有没有人用」，不是本站转化 ——
+          所以刻意不记进 outbound_click，否则顶栏点一次就会把「原文跳转率」的分子抬高、分母不变。</p>
         </div>
       </section>
 

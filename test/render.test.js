@@ -77,8 +77,11 @@ test('layout 无 site.link 时顶栏不输出外链', () => {
 test('layout 配置 site.link 时顶栏输出外链：顺序为 外链 → 分享 → 登录', () => {
   const link = { url: 'https://other.example.com/?sharecode=ABC', title: '另一款应用' }
   const html = layout({ ...site, link }, { title: 'T', description: 'D', body: '', shareEntry: true })
-  // 分享参数原样保留（目标应用的访问凭证不能丢），并带 data-track-skip
-  assert.match(html, /<a class="topbar-link topbar-ext" href="https:\/\/other\.example\.com\/\?sharecode=ABC" rel="noopener" data-track-skip>/)
+  // 分享参数原样保留（目标应用的访问凭证不能丢），并挂 data-ext 供埋点识别
+  assert.match(html, /<a class="topbar-link topbar-ext" href="https:\/\/other\.example\.com\/\?sharecode=ABC" rel="noopener" data-ext="topbar">/)
+  // 曾经挂的是 data-track-skip（完全不上报）。现在要统计它，两者不能并存 ——
+  // skip 的判断在 track.js 里排在 data-ext 之前，同时挂上就等于统计被静默关掉。
+  assert.doesNotMatch(html, /topbar-ext[^>]*data-track-skip/)
   assert.match(html, /<span>另一款应用<\/span>/)
   const at = (s) => html.indexOf(s)
   assert.ok(at('topbar-ext') > -1 && at('topbar-ext') < at('topbar-share'), '外链应在「分享」之前')

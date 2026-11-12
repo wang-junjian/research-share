@@ -118,7 +118,7 @@ declare v_event text := lower(coalesce(p_event,''));
 begin
   -- 1. 事件名白名单，不认识的直接丢弃（不报错，避免暴露字典）
   if v_event <> all (array['session_start','page_view','view_item','select_content',
-                         'change_view_mode','outbound_click','share',
+                         'change_view_mode','outbound_click','ext_click','share',
                          'error','content_publish']) then return; end if;
 
   -- 2. 属性白名单 + 类型收敛：只留已知键，字符串一律截断
@@ -153,7 +153,7 @@ begin
     'range',    ..., 'overview',  ..., 'trend',   ...,
     'items',    ..., 'funnel',    ..., 'sources', ...,
     'devices',  ..., 'share',     ..., 'retention', ...,
-    'recent',   ..., 'quality',   ...
+    'recent',   ..., 'quality',   ..., 'ext',       ...
   );
 end $$;
 revoke all on function public.analytics_dashboard(int) from anon, public;
@@ -173,7 +173,7 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 
 ## 5. 事件字典
 
-### 5.1 事件清单（共 8 个）
+### 5.1 事件清单（共 9 个）
 
 | # | 事件名 | GA4 对应 | 触发时机 | 私有属性 | 端 |
 |---|---|---|---|---|---|
@@ -182,9 +182,16 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 | 3 | `view_item` | view_item | 详情页可见（同会话同条目 3 秒内去抖） | `item_id, from` | C |
 | 4 | `select_content` | select_content | 首页卡片点击后跳转前 | `item_id, position` | C |
 | 5 | `outbound_click` | click (outbound) | 点「查看原文 ↗」或详情页原文链接 | `item_id, dest_host, via` | C |
-| 6 | `share` | **share** | 点任一分享按钮（成功或降级都记） | `method, degrade, item_id` | C |
-| 7 | `error` | — | `window.onerror` / 资源加载失败 / 服务端 5xx | `kind, msg` | S + C |
-| 8 | `content_publish` | — | 新成果落库成功后（`research_items` 的 AFTER INSERT 触发器） | `item_id` | **S** |
+| 6 | `ext_click` | click (external) | 点顶栏「作者的其他应用」入口（`data-ext` 容器，跳转前 flush） | `slot` | C |
+| 7 | `share` | **share** | 点任一分享按钮（成功或降级都记） | `method, degrade, item_id` | C |
+| 8 | `error` | — | `window.onerror` / 资源加载失败 / 服务端 5xx | `kind, msg` | S + C |
+| 9 | `content_publish` | — | 新成果落库成功后（`research_items` 的 AFTER INSERT 触发器） | `item_id` | **S** |
+
+`ext_click` 为什么单独一条、不复用 `outbound_click`（db/10）：两者回答的是不同问题 ——
+`outbound_click` 是**本站的转化**（读者看完有没有去读原文），`ext_click` 是**另一个产品有没有人用**。
+共用一个计数器的话，顶栏每被点一次都会让「原文跳转率」的分子变大而 `view_item` 不变，
+一个导航入口就被记成了转化。它也不进漏斗（`interacted` 只认 `select_content`），
+只在看板 C 区单列一行。`slot` 目前只有 `topbar` 一个取值，留作以后加页脚/侧栏入口。
 
 `share` 的 6 个 `method` 取值，与详情页按钮一一对应（顺序即页面顺序）：`copy_poster` / `show_poster` / `copy_src` / `copy_link` / `copy_poster_link` / `copy_text`。
 —— 这一条会直接回答一个悬了很久的问题：**6 个分享按钮里，哪几个是真的被用了、哪几个是摆设。**
@@ -220,7 +227,7 @@ grant execute on function public.analytics_dashboard(int) to authenticated;
 
 ### 5.3 `props` 白名单（防事件表被当垃圾场）
 
-只接受：`method`(enum) `to`(enum) `view_mode`(enum) `position`(int 0–200) `dest_host`(host ≤64) `from`(enum) `kind`(enum) `msg`(≤120 字) `landing`(路径) `degrade`(bool) `via`(enum: `doc`) `q`(≤60 字，后台搜索用)。
+只接受：`method`(enum) `to`(enum) `view_mode`(enum) `position`(int 0–200) `dest_host`(host ≤64) `from`(enum) `kind`(enum) `msg`(≤120 字) `landing`(路径) `degrade`(bool) `via`(enum: `doc`) `slot`(enum: `topbar`) `q`(≤60 字，后台搜索用)。
 （`to` / `view_mode` 是已下线的 `change_view_mode` 与旧版 `select_content` 的历史键，白名单保留以兼容滞留的缓存页面；v2 客户端不再发送。）
 其余键**静默丢弃**。枚举类字段值不在表内的，丢弃该键而非整条事件。
 （`degrade` 是 `share` 用来标记「浏览器剪贴板不可用、退化成手动长按」的布尔位，看板的分享效力表要用它。）
@@ -293,6 +300,8 @@ cloud.database.rpc('analytics_dashboard', { p_days: 30 })
 ## 9. 看板信息架构
 
 固定头部：**时间范围（今天 / 7 天 / 30 天 / 90 天）+ 对比上一周期 + 数据新鲜度（最后一条事件距今）+ 时区说明（Asia/Shanghai）**。
+**默认窗口是「今天」**（2026-11-12 起）：这个看板每天打开时要回答的第一个问题是「今天有人来吗」，而不是「这 30 天怎么样」。
+一天的窗口里 B 区只有一根柱子，所以图下会直接说「要看形状请切到近 7 天」，而不是留一句「发布天数太少」让人自己猜。
 区块划分与原型（`dashboard-preview.html`）逐块对应。
 
 ### A. 核心指标（6 张卡）
@@ -307,6 +316,9 @@ cloud.database.rpc('analytics_dashboard', { p_days: 30 })
 ### C. 行为漏斗与分享效力（并排）
 - **漏斗**：`会话 → 首页有交互 → 详情页浏览 → 原文跳转`，每两级之间标流失人数与流失率，**最大流失点用朱红标出**——那是唯一需要立刻动的地方。分叉终点（原文跳转 / 分享）另起一行。
 - **分享效力**：5 个 `method` 的点击数、占比、**降级次数**。微信内 clipboard 不可用会退化成弹层，这一列直接回答「5 个按钮里哪几个是摆设」。
+- **外部入口**（C 区下方横跨整行）：顶栏那个指向另一款应用的链接被点了几次、几个会话、今天几次、最近一次是什么时候。
+  只给绝对数，**刻意不算转化率** —— 分母该用「首页访客」还是「全部访客」没有一个诚实的答案，而在个位数样本上算百分比只会制造结论。
+  它不进北极星、不进漏斗，口径见 §5.1 的 `ext_click`。空状态也要说清是「没人点」还是「没埋上」：`D.ext` 缺失时提示执行 db/10，而不是画一个 0。
 
 ### D. 内容表现（可排序表格）
 `编号 · 标题 · 详情浏览 · 原文跳转 · 跳转率 · 分享 · 最近被看`（详情浏览列带迷你条形）。
